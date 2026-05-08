@@ -929,6 +929,8 @@ class Meesho_Master_Import {
 				'meesho_url'     => $r->meesho_url,
 				'wc_product_id'  => (int) $r->wc_product_id,
 				'wc_edit_url'    => $r->wc_product_id ? admin_url( 'post.php?post=' . $r->wc_product_id . '&action=edit' ) : '',
+				'wc_listing_url' => $r->wc_product_id ? admin_url( 'post.php?post=' . $r->wc_product_id . '&action=edit' ) : '',
+				'wc_live_url'    => $r->wc_product_id ? get_permalink( (int) $r->wc_product_id ) : '',
 				'image'          => $data['images'][0] ?? '',
 				'images_preview' => is_array( $data['images'] ?? null ) ? array_slice( $data['images'], 0, 4 ) : array(),
 				'images_count'   => is_array( $data['images'] ?? null ) ? count( $data['images'] ) : 0,

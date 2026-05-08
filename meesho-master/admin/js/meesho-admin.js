@@ -162,7 +162,8 @@
 							<div class="mm-recent-actions">
 								<button type="button" class="mm-btn mm-btn-ai mm-btn-sm" data-recent-ai="${p.id}">✨ AI Optimise</button>
 								${p.status === 'staged' ? `<button type="button" class="mm-btn mm-btn-woo mm-btn-sm" data-recent-push="${p.id}">+ Import to Woo</button>` : ''}
-								${p.wc_product_id ? `<a href="${escapeHtml(p.wc_edit_url || '#')}" target="_blank" class="mm-btn mm-btn-view mm-btn-sm">WC Edit ↗</a>` : ''}
+								${p.wc_product_id ? `<a href="${escapeHtml(p.wc_listing_url || p.wc_edit_url || '#')}" target="_blank" class="mm-btn mm-btn-view mm-btn-sm">View listing</a>` : ''}
+								${p.wc_product_id ? `<a href="${escapeHtml(p.wc_live_url || '#')}" target="_blank" class="mm-btn mm-btn-view mm-btn-sm">View LIVE</a>` : ''}
 								<a href="?page=meesho-master&tab=products" class="mm-btn mm-btn-view mm-btn-sm">🔍 View All</a>
 								<button type="button" class="mm-btn mm-btn-trash mm-btn-sm" data-recent-del="${p.id}" data-wc="${p.wc_product_id || 0}" title="Delete">🗑 Delete</button>
 							</div>
@@ -312,7 +313,9 @@
 				<td><div class="mm-row-actions">
 					<button type="button" class="mm-btn mm-btn-view" data-mm-action="toggle" data-id="${p.id}">View</button>
 					<button type="button" class="mm-btn mm-btn-ai" data-mm-action="ai" data-id="${p.id}">✨ AI</button>
-					${p.status === 'staged' ? `<button type="button" class="mm-btn mm-btn-woo" data-mm-action="push" data-id="${p.id}">+ Woo</button>` : `<a href="${p.wc_edit_url || '#'}" target="_blank" class="mm-btn mm-btn-view">WC ↗</a>`}
+					${p.status === 'staged' ? `<button type="button" class="mm-btn mm-btn-woo" data-mm-action="push" data-id="${p.id}">+ Woo</button>` : ''}
+					${p.wc_product_id ? `<a href="${escapeHtml(p.wc_listing_url || p.wc_edit_url || '#')}" target="_blank" class="mm-btn mm-btn-view">View listing</a>` : ''}
+					${p.wc_product_id ? `<a href="${escapeHtml(p.wc_live_url || '#')}" target="_blank" class="mm-btn mm-btn-view">View LIVE</a>` : ''}
 					<button type="button" class="mm-btn mm-btn-trash" data-mm-action="delete" data-id="${p.id}" data-wc="${p.wc_product_id || 0}">🗑</button>
 				</div></td>
 			</tr>
