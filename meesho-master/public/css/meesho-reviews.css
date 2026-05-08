@@ -1,0 +1,282 @@
+/**
+ * Meesho Reviews Tab - Default Styles
+ * All styles use CSS variables for easy customization via Copilot
+ */
+
+:root {
+	/* Container */
+	--mm-reviews-max-width: 800px;
+	--mm-reviews-bg: transparent;
+	--mm-reviews-padding: 0;
+	--mm-reviews-border-radius: 0;
+
+	/* Summary Section */
+	--mm-summary-gap: 16px;
+	--mm-summary-padding-bottom: 16px;
+	--mm-summary-border-bottom: 1px solid #E2E8F0;
+
+	/* Average Rating */
+	--mm-avg-rating-font-size: 48px;
+	--mm-avg-rating-font-weight: 700;
+	--mm-avg-rating-color: #1E293B;
+
+	/* Stars */
+	--mm-stars-color: #F59E0B;
+	--mm-stars-font-size: 20px;
+	--mm-stars-letter-spacing: 2px;
+
+	/* Review Count */
+	--mm-review-count-color: #64748B;
+	--mm-review-count-font-size: 14px;
+
+	/* Rating Breakdown */
+	--mm-breakdown-min-width: 250px;
+
+	/* Rating Bar */
+	--mm-bar-row-gap: 8px;
+	--mm-bar-row-margin-bottom: 6px;
+	--mm-bar-height: 10px;
+	--mm-bar-bg: #E2E8F0;
+	--mm-bar-border-radius: 5px;
+	--mm-bar-fill-transition: width 0.3s ease;
+
+	/* Star Labels */
+	--mm-star-label-width: 16px;
+	--mm-star-label-font-size: 13px;
+	--mm-star-label-font-weight: 600;
+
+	/* Percentage */
+	--mm-pct-width: 32px;
+	--mm-pct-font-size: 12px;
+	--mm-pct-color: #64748B;
+
+	/* Reviews List */
+	--mm-list-min-width: 300px;
+	--mm-review-item-border-bottom: 1px solid #E2E8F0;
+	--mm-review-item-padding: 16px 0;
+
+	/* Reviewer Avatar */
+	--mm-avatar-size: 36px;
+	--mm-avatar-bg: #E2E8F0;
+	--mm-avatar-border-radius: 50%;
+	--mm-avatar-font-weight: 600;
+	--mm-avatar-color: #64748B;
+
+	/* Reviewer Name */
+	--mm-reviewer-name-font-weight: 600;
+	--mm-reviewer-name-font-size: 14px;
+
+	/* Review Text */
+	--mm-review-text-margin: 8px 0 0;
+	--mm-review-text-font-size: 14px;
+	--mm-review-text-color: #334155;
+	--mm-review-text-line-height: 1.6;
+
+	/* Review Image */
+	--mm-review-img-max-width: 120px;
+	--mm-review-img-max-height: 120px;
+	--mm-review-img-border-radius: 8px;
+	--mm-review-img-margin-top: 8px;
+	--mm-review-img-object-fit: cover;
+
+	/* Date */
+	--mm-date-color: #94A3B8;
+	--mm-date-font-size: 12px;
+	--mm-date-margin-left: auto;
+
+	/* Disclaimer */
+	--mm-disclaimer-bg: #F8FAFC;
+	--mm-disclaimer-padding: 12px;
+	--mm-disclaimer-border-radius: 8px;
+	--mm-disclaimer-font-size: 12px;
+	--mm-disclaimer-color: #64748B;
+	--mm-disclaimer-margin-top: 20px;
+
+	/* Star Colors for Bars */
+	--mm-star-5-color: #10B981;
+	--mm-star-4-color: #34D399;
+	--mm-star-3-color: #F59E0B;
+	--mm-star-2-color: #F97316;
+	--mm-star-1-color: #EF4444;
+
+	/* Typography */
+	--mm-font-family: Arial, sans-serif;
+}
+
+/* Main Container */
+.mm-meesho-reviews-tab {
+	max-width: var(--mm-reviews-max-width);
+	background: var(--mm-reviews-bg);
+	padding: var(--mm-reviews-padding);
+	border-radius: var(--mm-reviews-border-radius);
+	font-family: var(--mm-font-family);
+}
+
+/* Summary Section */
+.mm-reviews-summary {
+	display: flex;
+	align-items: center;
+	gap: var(--mm-summary-gap);
+	margin-bottom: 20px;
+	padding-bottom: var(--mm-summary-padding-bottom);
+	border-bottom: var(--mm-summary-border-bottom);
+}
+
+.mm-avg-rating {
+	font-size: var(--mm-avg-rating-font-size);
+	font-weight: var(--mm-avg-rating-font-weight);
+	color: var(--mm-avg-rating-color);
+}
+
+.mm-reviews-meta {
+	flex: 1;
+}
+
+.mm-stars {
+	color: var(--mm-stars-color);
+	font-size: var(--mm-stars-font-size);
+	letter-spacing: var(--mm-stars-letter-spacing);
+}
+
+.mm-review-count {
+	color: var(--mm-review-count-color);
+	font-size: var(--mm-review-count-font-size);
+}
+
+/* Content Layout */
+.mm-reviews-content {
+	display: flex;
+	gap: 24px;
+	flex-wrap: wrap;
+}
+
+/* Rating Breakdown */
+.mm-rating-breakdown {
+	flex: 1;
+	min-width: var(--mm-breakdown-min-width);
+}
+
+.mm-rating-bar-row {
+	display: flex;
+	align-items: center;
+	gap: var(--mm-bar-row-gap);
+	margin-bottom: var(--mm-bar-row-margin-bottom);
+}
+
+.mm-star-label {
+	width: var(--mm-star-label-width);
+	font-size: var(--mm-star-label-font-size);
+	font-weight: var(--mm-star-label-font-weight);
+}
+
+.mm-rating-bar {
+	flex: 1;
+	height: var(--mm-bar-height);
+	background: var(--mm-bar-bg);
+	border-radius: var(--mm-bar-border-radius);
+	overflow: hidden;
+}
+
+.mm-rating-bar-fill {
+	height: 100%;
+	border-radius: var(--mm-bar-border-radius);
+	transition: var(--mm-bar-fill-transition);
+}
+
+.mm-rating-pct {
+	width: var(--mm-pct-width);
+	font-size: var(--mm-pct-font-size);
+	color: var(--mm-pct-color);
+	text-align: right;
+}
+
+/* Reviews List */
+.mm-reviews-list {
+	flex: 2;
+	min-width: var(--mm-list-min-width);
+}
+
+.mm-review-item {
+	border-bottom: var(--mm-review-item-border-bottom);
+	padding: var(--mm-review-item-padding);
+}
+
+.mm-review-header {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-bottom: 8px;
+}
+
+.mm-reviewer-avatar {
+	width: var(--mm-avatar-size);
+	height: var(--mm-avatar-size);
+	background: var(--mm-avatar-bg);
+	border-radius: var(--mm-avatar-border-radius);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-weight: var(--mm-avatar-font-weight);
+	color: var(--mm-avatar-color);
+}
+
+.mm-reviewer-info {
+	flex: 1;
+}
+
+.mm-reviewer-name {
+	font-weight: var(--mm-reviewer-name-font-weight);
+	font-size: var(--mm-reviewer-name-font-size);
+}
+
+.mm-review-stars {
+	color: var(--mm-stars-color);
+	font-size: 14px;
+}
+
+.mm-review-date {
+	margin-left: var(--mm-date-margin-left);
+	color: var(--mm-date-color);
+	font-size: var(--mm-date-font-size);
+}
+
+.mm-review-text {
+	margin: var(--mm-review-text-margin);
+	font-size: var(--mm-review-text-font-size);
+	color: var(--mm-review-text-color);
+	line-height: var(--mm-review-text-line-height);
+}
+
+.mm-review-image {
+	max-width: var(--mm-review-img-max-width);
+	max-height: var(--mm-review-img-max-height);
+	border-radius: var(--mm-review-img-border-radius);
+	margin-top: var(--mm-review-img-margin-top);
+	object-fit: var(--mm-review-img-object-fit);
+}
+
+.mm-no-reviews {
+	color: #64748B;
+	font-style: italic;
+}
+
+/* Disclaimer */
+.mm-reviews-disclaimer {
+	margin-top: var(--mm-disclaimer-margin-top);
+	padding: var(--mm-disclaimer-padding);
+	background: var(--mm-disclaimer-bg);
+	border-radius: var(--mm-disclaimer-border-radius);
+	font-size: var(--mm-disclaimer-font-size);
+	color: var(--mm-disclaimer-color);
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+	:root {
+		--mm-reviews-content-flex-direction: column;
+	}
+
+	.mm-reviews-content {
+		flex-direction: column;
+	}
+}
