@@ -347,23 +347,25 @@
 	};
 
 	MM.openEditPanel = function (id, scrollToAi) {
+		const safeId = String(parseInt(id, 10) || 0);
+		if (!safeId) return;
 		// Close any other open panel first
 		document.querySelectorAll('.mm-product-edit-panel').forEach((p) => {
-			if (p.getAttribute('data-panel-id') !== id) p.classList.add('mm-hidden');
+			if (p.getAttribute('data-panel-id') !== safeId) p.classList.add('mm-hidden');
 		});
-		const panel = document.querySelector(`[data-panel-id="${id}"]`);
-		const content = document.querySelector(`[data-panel-content="${id}"]`);
+		const panel = document.querySelector(`[data-panel-id="${safeId}"]`);
+		const content = document.querySelector(`[data-panel-content="${safeId}"]`);
 		if (!panel || !content) return;
 		panel.classList.remove('mm-hidden');
 		content.innerHTML = '<p class="mm-text-muted" style="grid-column:span 2;">Loading…</p>';
-		ajaxPost('mm_get_staged', { id }).then((res) => {
+		ajaxPost('mm_get_staged', { id: safeId }).then((res) => {
 			if (!res.success) { content.innerHTML = '<p>Load failed.</p>'; return; }
 			MM.products.current = res.data;
 			const d = res.data.data || {};
 			const reviews = (d.reviews || []).slice(0, 20);
 			const variationRows = normalizeVariationRows(d.sizes || [], res.data.sku || '');
 			const reviewsHtml = reviews.length ? reviews.map((r) => `
-				<div class="mm-edit-review" data-mm-review-row="${id}">
+				<div class="mm-edit-review" data-mm-review-row="${safeId}">
 					<div class="mm-edit-review-header">
 						<input type="text" data-mm-review-name class="mm-input" value="${escapeHtml(r.reviewer_name || 'Customer')}" placeholder="Reviewer" style="max-width:180px;">
 						<select data-mm-review-rating class="mm-input" style="max-width:90px;">
@@ -380,7 +382,7 @@
 				</div>
 			`).join('') : '<p class="mm-text-muted">No reviews scraped.</p>';
 			const variationRowsHtml = variationRows.length ? variationRows.map((v) => `
-				<tr data-mm-var-row="${id}">
+				<tr data-mm-var-row="${safeId}">
 					<td><input type="text" data-mm-var-size class="mm-input" value="${escapeHtml(v.size || '')}" placeholder="Size"></td>
 					<td><input type="text" data-mm-var-sku class="mm-input" value="${escapeHtml(v.sku || '')}" placeholder="SKU"></td>
 					<td><input type="number" min="0" data-mm-var-stock class="mm-input" value="${escapeHtml(v.stock || v.stock === 0 ? v.stock : '')}" placeholder="Stock"></td>
@@ -398,24 +400,24 @@
 				<div class="mm-edit-section">
 					<h4>Title <span class="mm-text-muted" style="font-weight:normal;font-size:11px;">(SKU ${escapeHtml(res.data.sku)})</span></h4>
 					<div class="mm-title-with-ai">
-						<input type="text" class="mm-input" id="mm_field_title_${id}" value="${escapeHtml(d.title || '')}">
-						<button type="button" class="mm-btn mm-btn-ai mm-btn-sm" data-mm-ai-title="${id}" title="Generate title using master prompt">✨ AI</button>
+						<input type="text" class="mm-input" id="mm_field_title_${safeId}" value="${escapeHtml(d.title || '')}">
+						<button type="button" class="mm-btn mm-btn-ai mm-btn-sm" data-mm-ai-title="${safeId}" title="Generate title using master prompt">✨ AI</button>
 					</div>
 					<div class="mm-grid mm-grid-2 mm-mt-10">
-						<div><label class="mm-label">Source ₹</label><input type="number" step="0.01" class="mm-input" id="mm_field_price_${id}" value="${d.price || ''}"></div>
-						<div><label class="mm-label">Source MRP</label><input type="number" step="0.01" class="mm-input" id="mm_field_mrp_${id}" value="${d.mrp || ''}"></div>
+						<div><label class="mm-label">Source ₹</label><input type="number" step="0.01" class="mm-input" id="mm_field_price_${safeId}" value="${escapeHtml(d.price || '')}"></div>
+						<div><label class="mm-label">Source MRP</label><input type="number" step="0.01" class="mm-input" id="mm_field_mrp_${safeId}" value="${escapeHtml(d.mrp || '')}"></div>
 					</div>
 					<div class="mm-card" style="background:#fff7ed;padding:10px;margin-top:10px;">
 						<label class="mm-label">💰 Manual Override (overrides Settings markup rules)</label>
 						<div class="mm-grid mm-grid-2">
-							<input type="number" step="0.01" class="mm-input" id="mm_field_op_${id}" value="${d.override_price || ''}" placeholder="Calculated: ₹${res.data.our_price || d.price || 0} — leave blank to use markup rules">
-							<input type="number" step="0.01" class="mm-input" id="mm_field_om_${id}" value="${d.override_mrp || ''}" placeholder="Override MRP">
+							<input type="number" step="0.01" class="mm-input" id="mm_field_op_${safeId}" value="${escapeHtml(d.override_price || '')}" placeholder="Calculated: ₹${escapeHtml(res.data.our_price || d.price || 0)} — leave blank to use markup rules">
+							<input type="number" step="0.01" class="mm-input" id="mm_field_om_${safeId}" value="${escapeHtml(d.override_mrp || '')}" placeholder="Override MRP">
 						</div>
 					</div>
 					<label class="mm-label mm-mt-10">Description (HTML — same for all variations)</label>
-					<textarea class="mm-textarea" id="mm_field_desc_${id}" rows="6">${escapeHtml(d.description || '')}</textarea>
-					<button type="button" class="mm-btn mm-btn-ai mm-btn-sm mm-mt-10" data-mm-ai-desc="${id}">✨ AI Optimize Description</button>
-					<div id="mm_optimize_status_${id}" class="mm-text-muted mm-mt-10" style="font-size:12px;"></div>
+					<textarea class="mm-textarea" id="mm_field_desc_${safeId}" rows="6">${escapeHtml(d.description || '')}</textarea>
+					<button type="button" class="mm-btn mm-btn-ai mm-btn-sm mm-mt-10" data-mm-ai-desc="${safeId}">✨ AI Optimize Description</button>
+					<div id="mm_optimize_status_${safeId}" class="mm-text-muted mm-mt-10" style="font-size:12px;"></div>
 					<label class="mm-label mm-mt-10">Variations (Size / SKU / Stock / OOS)</label>
 					<div style="overflow:auto;">
 						<table style="width:100%;border-collapse:collapse;font-size:12px;">
@@ -427,13 +429,13 @@
 								<th style="text-align:left;padding:6px;border-bottom:1px solid #e2e8f0;">MRP</th>
 								<th style="text-align:center;padding:6px;border-bottom:1px solid #e2e8f0;">OOS</th>
 							</tr></thead>
-							<tbody id="mm_var_table_${id}">${variationRowsHtml}</tbody>
+							<tbody id="mm_var_table_${safeId}">${variationRowsHtml}</tbody>
 						</table>
 					</div>
 					<div class="mm-mt-10" style="display:flex;gap:8px;align-items:center;">
-						<button class="mm-btn mm-btn-outline mm-btn-sm" data-mm-var-add="${id}">+ Add Variation</button>
+						<button type="button" class="mm-btn mm-btn-outline mm-btn-sm" data-mm-var-add="${safeId}">+ Add Variation</button>
 						<label style="display:flex;gap:6px;align-items:center;font-size:12px;color:#475569;">
-							<input type="checkbox" id="mm_field_all_oos_${id}" ${d.all_out_of_stock ? 'checked' : ''}> Out of Stock for entire listing
+							<input type="checkbox" id="mm_field_all_oos_${safeId}" ${d.all_out_of_stock ? 'checked' : ''}> Out of Stock for entire listing
 						</label>
 					</div>
 				</div>
@@ -441,38 +443,38 @@
 					<h4>📷 Images (${(d.images || []).length})</h4>
 					<div class="mm-edit-images-grid">${(d.images || []).map((u) => `<img src="${escapeHtml(u)}">`).join('')}</div>
 					<details class="mm-mt-10"><summary style="cursor:pointer;font-weight:600;">🎨 Generate AI Image</summary>
-						<textarea class="mm-textarea mm-mt-10" id="mm_image_prompt_${id}" rows="2" placeholder="Leave blank to use master prompt with title auto-filled."></textarea>
-						<button type="button" class="mm-btn mm-btn-ai mm-btn-sm mm-mt-10" data-mm-ai-image="${id}">🎨 Generate</button>
-						<div id="mm_image_gen_status_${id}" class="mm-text-muted mm-mt-10" style="font-size:12px;"></div>
-						<div id="mm_image_gen_result_${id}"></div>
+						<textarea class="mm-textarea mm-mt-10" id="mm_image_prompt_${safeId}" rows="2" placeholder="Leave blank to use master prompt with title auto-filled."></textarea>
+						<button type="button" class="mm-btn mm-btn-ai mm-btn-sm mm-mt-10" data-mm-ai-image="${safeId}">🎨 Generate</button>
+						<div id="mm_image_gen_status_${safeId}" class="mm-text-muted mm-mt-10" style="font-size:12px;"></div>
+						<div id="mm_image_gen_result_${safeId}"></div>
 					</details>
 					${attrsHtml ? `<h4 class="mm-mt-10">📋 Product Attributes</h4>${attrsHtml}` : ''}
 					<h4 class="mm-mt-10">⭐ Reviews (${d.reviews ? d.reviews.length : 0})</h4>
 					<div class="mm-edit-reviews">${reviewsHtml}</div>
 				</div>
 				<div class="mm-edit-actions" style="grid-column:span 2;">
-					<span class="mm-edit-status" id="mm_panel_status_${id}"></span>
-					<button type="button" class="mm-btn mm-btn-outline" data-mm-cancel="${id}">Cancel</button>
-					<button type="button" class="mm-btn mm-btn-primary" data-mm-save="${id}">💾 Save</button>
-					<button type="button" class="mm-btn mm-btn-woo" data-mm-pushpanel="${id}">🚀 Push to WC</button>
+					<span class="mm-edit-status" id="mm_panel_status_${safeId}"></span>
+					<button type="button" class="mm-btn mm-btn-outline" data-mm-cancel="${safeId}">Cancel</button>
+					<button type="button" class="mm-btn mm-btn-primary" data-mm-save="${safeId}">💾 Save</button>
+					<button type="button" class="mm-btn mm-btn-woo" data-mm-pushpanel="${safeId}">🚀 Push to WC</button>
 				</div>`;
 
-			content.querySelector(`[data-mm-cancel="${id}"]`).addEventListener('click', () => panel.classList.add('mm-hidden'));
-			content.querySelector(`[data-mm-save="${id}"]`).addEventListener('click', () => MM.savePanel(id));
-			content.querySelector(`[data-mm-pushpanel="${id}"]`).addEventListener('click', () => MM.savePanel(id, true));
-			const aiTitle = content.querySelector(`[data-mm-ai-title="${id}"]`);
-			if (aiTitle) aiTitle.addEventListener('click', () => MM.aiGenerateTitle(id));
-			const aiDesc = content.querySelector(`[data-mm-ai-desc="${id}"]`);
-			if (aiDesc) aiDesc.addEventListener('click', () => MM.aiOptimizeDesc(id));
-			const aiImage = content.querySelector(`[data-mm-ai-image="${id}"]`);
-			if (aiImage) aiImage.addEventListener('click', () => MM.aiGenerateImage(id));
-			const addVar = content.querySelector(`[data-mm-var-add="${id}"]`);
+			content.querySelector(`[data-mm-cancel="${safeId}"]`).addEventListener('click', () => panel.classList.add('mm-hidden'));
+			content.querySelector(`[data-mm-save="${safeId}"]`).addEventListener('click', () => MM.savePanel(safeId));
+			content.querySelector(`[data-mm-pushpanel="${safeId}"]`).addEventListener('click', () => MM.savePanel(safeId, true));
+			const aiTitle = content.querySelector(`[data-mm-ai-title="${safeId}"]`);
+			if (aiTitle) aiTitle.addEventListener('click', () => MM.aiGenerateTitle(safeId));
+			const aiDesc = content.querySelector(`[data-mm-ai-desc="${safeId}"]`);
+			if (aiDesc) aiDesc.addEventListener('click', () => MM.aiOptimizeDesc(safeId));
+			const aiImage = content.querySelector(`[data-mm-ai-image="${safeId}"]`);
+			if (aiImage) aiImage.addEventListener('click', () => MM.aiGenerateImage(safeId));
+			const addVar = content.querySelector(`[data-mm-var-add="${safeId}"]`);
 			if (addVar) addVar.addEventListener('click', (e) => {
 				e.preventDefault();
-				const tbody = $(`#mm_var_table_${id}`);
+				const tbody = $(`#mm_var_table_${safeId}`);
 				if (!tbody) return;
 				const tr = document.createElement('tr');
-				tr.setAttribute('data-mm-var-row', id);
+				tr.setAttribute('data-mm-var-row', safeId);
 				tr.innerHTML = `
 					<td><input type="text" data-mm-var-size class="mm-input" placeholder="Size"></td>
 					<td><input type="text" data-mm-var-sku class="mm-input" placeholder="SKU"></td>
@@ -555,10 +557,11 @@
 	};
 
 	MM.aiGenerateImage = function (id) {
-		const promptField = $(`#mm_image_prompt_${id}`);
-		const status = $(`#mm_image_gen_status_${id}`);
-		const out = $(`#mm_image_gen_result_${id}`);
-		const titleField = $(`#mm_field_title_${id}`);
+		const safeId = String(parseInt(id, 10) || 0);
+		const promptField = $(`#mm_image_prompt_${safeId}`);
+		const status = $(`#mm_image_gen_status_${safeId}`);
+		const out = $(`#mm_image_gen_result_${safeId}`);
+		const titleField = $(`#mm_field_title_${safeId}`);
 		const prompt = (promptField && promptField.value.trim()) || '';
 		const title = (titleField && titleField.value) || '';
 		if (status) status.textContent = '⏳ Generating image (30–60s)…';
@@ -566,17 +569,28 @@
 			if (res.success && res.data && res.data.image_url) {
 				const url = res.data.image_url;
 				if (status) status.innerHTML = '✅ Generated.';
-				if (out) out.innerHTML = `<img src="${escapeHtml(url)}" style="width:100%;max-width:280px;border-radius:6px;margin-top:8px;">
-					<button class="mm-btn mm-btn-success mm-btn-sm mm-mt-10" data-add-image="${id}" data-url="${escapeHtml(url)}">+ Add to Images</button>`;
-				const addBtn = out && out.querySelector(`[data-add-image="${id}"]`);
+				if (out) {
+					out.innerHTML = '';
+					const img = document.createElement('img');
+					img.src = url;
+					img.style.cssText = 'width:100%;max-width:280px;border-radius:6px;margin-top:8px;';
+					const btn = document.createElement('button');
+					btn.type = 'button';
+					btn.className = 'mm-btn mm-btn-success mm-btn-sm mm-mt-10';
+					btn.setAttribute('data-add-image', safeId);
+					btn.textContent = '+ Add to Images';
+					out.appendChild(img);
+					out.appendChild(btn);
+				}
+				const addBtn = out && out.querySelector(`[data-add-image="${safeId}"]`);
 				if (addBtn) addBtn.addEventListener('click', () => {
-					ajaxPost('mm_get_staged', { id }).then((g) => {
+					ajaxPost('mm_get_staged', { id: safeId }).then((g) => {
 						const data = (g.data && g.data.data) || {};
 						const imgs = Array.isArray(data.images) ? data.images.slice() : [];
 						imgs.push(url);
-						ajaxPost('mm_save_staged', { id, fields: { images: imgs } }).then((s) => {
+						ajaxPost('mm_save_staged', { id: safeId, fields: { images: imgs } }).then((s) => {
 							MM.toast(s.success ? 'Image added.' : 'Failed.', s.success ? 'success' : 'error');
-							if (s.success) MM.openEditPanel(id);
+							if (s.success) MM.openEditPanel(safeId);
 						});
 					});
 				});

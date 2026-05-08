@@ -3,7 +3,7 @@
  * Plugin Name: Meesho Master
  * Plugin URI:  
  * Description: A complete Meesho-to-WooCommerce automation and management suite.
- * Version:     6.5.0
+ * Version:     7.0.0
  * Author:      
  * Text Domain: meesho-master
  */
@@ -12,7 +12,7 @@ if ( ! defined( 'WPINC' ) ) {
 	die;
 }
 
-define( 'MEESHO_MASTER_VERSION', '6.5.0' );
+define( 'MEESHO_MASTER_VERSION', '7.0.0' );
 define( 'MEESHO_MASTER_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MEESHO_MASTER_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 
