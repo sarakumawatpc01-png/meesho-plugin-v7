@@ -12,6 +12,56 @@
 		d.textContent = v == null ? '' : String(v);
 		return d.innerHTML;
 	};
+	const normalizeVariationRows = (sizes, baseSku) => {
+		const list = Array.isArray(sizes) ? sizes : [];
+		return list.map((s) => {
+			if (typeof s === 'string') {
+				const sz = s.trim().toUpperCase();
+				const skuSuffix = sz.replace(/[^A-Z0-9\-_]/g, '').replace(/\s+/g, '-');
+				return { size: sz, sku: `${baseSku}-${skuSuffix}`, stock: '', available: true, oos: false, price: 0, mrp: 0 };
+			}
+			const sz = String((s && s.size) || '').trim().toUpperCase();
+			const skuSuffix = sz.replace(/[^A-Z0-9\-_]/g, '').replace(/\s+/g, '-');
+			return {
+				size: sz,
+				sku: (s && s.sku) ? String(s.sku) : `${baseSku}-${skuSuffix}`,
+				stock: (s && (s.stock || s.stock === 0)) ? String(s.stock) : '',
+				available: s && Object.prototype.hasOwnProperty.call(s, 'available') ? !!s.available : true,
+				oos: !!(s && (s.oos || s.out_of_stock)),
+				price: parseFloat((s && s.price) || 0) || 0,
+				mrp: parseFloat((s && s.mrp) || 0) || 0,
+			};
+		}).filter((r) => r.size);
+	};
+	const readVariationRowsFromPanel = (id) => {
+		return $$(`[data-mm-var-row="${id}"]`).map((row) => {
+			const size = ($('[data-mm-var-size]', row) || {}).value || '';
+			const sku = ($('[data-mm-var-sku]', row) || {}).value || '';
+			const stockRaw = ($('[data-mm-var-stock]', row) || {}).value || '';
+			const oos = !!(($('[data-mm-var-oos]', row) || {}).checked);
+			const priceRaw = ($('[data-mm-var-price]', row) || {}).value || '';
+			const mrpRaw = ($('[data-mm-var-mrp]', row) || {}).value || '';
+			const stockNum = stockRaw === '' ? '' : Math.max(0, parseInt(stockRaw, 10) || 0);
+			return {
+				size: size.trim().toUpperCase(),
+				sku: sku.trim(),
+				stock: stockNum,
+				available: !oos && (stockNum === '' ? true : stockNum > 0),
+				oos,
+				price: parseFloat(priceRaw) || 0,
+				mrp: parseFloat(mrpRaw) || 0,
+			};
+		}).filter((v) => v.size);
+	};
+	const readReviewsFromPanel = (id) => {
+		return $$(`[data-mm-review-row="${id}"]`).map((row) => ({
+			reviewer_name: (($('[data-mm-review-name]', row) || {}).value || '').trim() || 'Customer',
+			rating: Math.min(5, Math.max(1, parseInt((($('[data-mm-review-rating]', row) || {}).value || '5'), 10) || 5)),
+			comment: (($('[data-mm-review-comment]', row) || {}).value || '').trim(),
+			date: (($('[data-mm-review-date]', row) || {}).value || '').trim(),
+			media: (($('[data-mm-review-media]', row) || {}).value || '').split(',').map((m) => m.trim()).filter(Boolean),
+		})).filter((r) => r.comment || r.reviewer_name);
+	};
 
 	/* ============================================================
 	 * Toast / notifications
@@ -86,7 +136,8 @@
 				}
 				recentGrid.innerHTML = items.map((p) => {
 					const ourPrice = p.our_price || (p.override_price && p.override_price > 0 ? p.override_price : (p.price || 0));
-					const sizes = (p.sizes || []).map(s => typeof s === 'string' ? s : (s.size || '')).filter(Boolean).join(', ') || '—';
+					const variations = (p.variation_rows || []).length ? p.variation_rows : normalizeVariationRows(p.sizes || [], p.sku || '');
+					const sizes = variations.map((v) => v.size).filter(Boolean).join(', ') || '—';
 					const stars = p.avg_rating ? '<span class="mm-recent-rating"><span class="star">★</span> ' + p.avg_rating + ' (' + (p.review_count || 0) + ')</span>' : '';
 					const imgsHtml = (p.images_preview || []).slice(0, 4).map((u) => `<img src="${escapeHtml(u)}">`).join('');
 					return `
@@ -109,11 +160,11 @@
 								${p.images_count || 0} Images · ${p.review_count || 0} Reviews
 							</div>
 							<div class="mm-recent-actions">
-								<button class="mm-btn mm-btn-ai mm-btn-sm" data-recent-ai="${p.id}">✨ AI Optimise</button>
-								${p.status === 'staged' ? `<button class="mm-btn mm-btn-woo mm-btn-sm" data-recent-push="${p.id}">+ Import to Woo</button>` : ''}
+								<button type="button" class="mm-btn mm-btn-ai mm-btn-sm" data-recent-ai="${p.id}">✨ AI Optimise</button>
+								${p.status === 'staged' ? `<button type="button" class="mm-btn mm-btn-woo mm-btn-sm" data-recent-push="${p.id}">+ Import to Woo</button>` : ''}
 								${p.wc_product_id ? `<a href="${escapeHtml(p.wc_edit_url || '#')}" target="_blank" class="mm-btn mm-btn-view mm-btn-sm">WC Edit ↗</a>` : ''}
 								<a href="?page=meesho-master&tab=products" class="mm-btn mm-btn-view mm-btn-sm">🔍 View All</a>
-								<button class="mm-btn mm-btn-trash mm-btn-sm" data-recent-del="${p.id}" data-wc="${p.wc_product_id || 0}" title="Delete">🗑 Delete</button>
+								<button type="button" class="mm-btn mm-btn-trash mm-btn-sm" data-recent-del="${p.id}" data-wc="${p.wc_product_id || 0}" title="Delete">🗑 Delete</button>
 							</div>
 							${imgsHtml ? `<div class="mm-recent-images-strip"><h5>Scraped Images</h5><div class="mm-recent-images-strip-grid">${imgsHtml}</div></div>` : ''}
 							${(p.reviews_preview || []).length ? `<div class="mm-recent-reviews-strip"><h5>Reviews (marketplace refs removed)</h5>${p.reviews_preview.slice(0, 2).map((r) => `
@@ -246,22 +297,23 @@
 			'<th>Sizes</th><th>Reviews</th><th>Status</th><th>Actions</th>' +
 			'</tr></thead><tbody>';
 		filtered.forEach((p) => {
-			const sizes = (p.sizes || []).map(s => typeof s === 'string' ? s : (s.size || '')).filter(Boolean).join(', ') || '—';
-			const sizesShort = sizes.length > 24 ? sizes.substring(0, 24) + '…' : sizes;
+			const variations = (p.variation_rows || []).length ? p.variation_rows : normalizeVariationRows(p.sizes || [], p.sku || '');
+			const varSummary = variations.map((v) => `${v.size}:${v.sku || '-'}:${(v.stock || v.stock === 0) ? v.stock : '-'}:${(v.oos || v.available === false) ? 'OOS' : 'In'}`).join(' | ') || '—';
+			const varShort = varSummary.length > 56 ? varSummary.substring(0, 56) + '…' : varSummary;
 			const ourPrice = p.our_price || (p.override_price && p.override_price > 0 ? p.override_price : (p.price || 0));
 			html += `<tr data-row-id="${p.id}">
 				<td><img src="${escapeHtml(p.image || '')}" class="mm-row-thumb" onerror="this.style.background='#f1f5f9';this.removeAttribute('src');"></td>
 				<td><a class="mm-row-title" data-mm-action="toggle" data-id="${p.id}">${escapeHtml(p.title || '(no title)')}</a><div style="color:#94a3b8;font-size:11px;margin-top:2px;">SKU ${escapeHtml(p.sku)}</div></td>
 				<td><span class="mm-row-price-source">₹${p.price || 0}</span></td>
 				<td><span class="mm-row-price-our">₹${ourPrice}</span></td>
-				<td title="${escapeHtml(sizes)}"><span class="mm-row-sizes">${escapeHtml(sizesShort)}</span></td>
+				<td title="${escapeHtml(varSummary)}"><span class="mm-row-sizes">${escapeHtml(varShort)}</span></td>
 				<td>${p.review_count || 0}${p.avg_rating ? ' ★' + p.avg_rating : ''}</td>
 				<td><span class="mm-status-badge mm-status-${p.status}">${p.status}</span></td>
 				<td><div class="mm-row-actions">
-					<button class="mm-btn mm-btn-view" data-mm-action="toggle" data-id="${p.id}">View</button>
-					<button class="mm-btn mm-btn-ai" data-mm-action="ai" data-id="${p.id}">✨ AI</button>
-					${p.status === 'staged' ? `<button class="mm-btn mm-btn-woo" data-mm-action="push" data-id="${p.id}">+ Woo</button>` : `<a href="${p.wc_edit_url || '#'}" target="_blank" class="mm-btn mm-btn-view">WC ↗</a>`}
-					<button class="mm-btn mm-btn-trash" data-mm-action="delete" data-id="${p.id}" data-wc="${p.wc_product_id || 0}">🗑</button>
+					<button type="button" class="mm-btn mm-btn-view" data-mm-action="toggle" data-id="${p.id}">View</button>
+					<button type="button" class="mm-btn mm-btn-ai" data-mm-action="ai" data-id="${p.id}">✨ AI</button>
+					${p.status === 'staged' ? `<button type="button" class="mm-btn mm-btn-woo" data-mm-action="push" data-id="${p.id}">+ Woo</button>` : `<a href="${p.wc_edit_url || '#'}" target="_blank" class="mm-btn mm-btn-view">WC ↗</a>`}
+					<button type="button" class="mm-btn mm-btn-trash" data-mm-action="delete" data-id="${p.id}" data-wc="${p.wc_product_id || 0}">🗑</button>
 				</div></td>
 			</tr>
 			<tr class="mm-product-edit-panel mm-hidden" data-panel-id="${p.id}">
@@ -308,17 +360,35 @@
 			if (!res.success) { content.innerHTML = '<p>Load failed.</p>'; return; }
 			MM.products.current = res.data;
 			const d = res.data.data || {};
-			const reviews = (d.reviews || []).slice(0, 6);
+			const reviews = (d.reviews || []).slice(0, 20);
+			const variationRows = normalizeVariationRows(d.sizes || [], res.data.sku || '');
 			const reviewsHtml = reviews.length ? reviews.map((r) => `
-				<div class="mm-edit-review">
+				<div class="mm-edit-review" data-mm-review-row="${id}">
 					<div class="mm-edit-review-header">
-						<strong>${escapeHtml(r.reviewer_name || 'Customer')}</strong>
-						<span class="mm-edit-review-stars">${'★'.repeat(parseInt(r.rating || 5))}${'☆'.repeat(5 - parseInt(r.rating || 5))}</span>
+						<input type="text" data-mm-review-name class="mm-input" value="${escapeHtml(r.reviewer_name || 'Customer')}" placeholder="Reviewer" style="max-width:180px;">
+						<select data-mm-review-rating class="mm-input" style="max-width:90px;">
+							<option value="5" ${parseInt(r.rating || 5) === 5 ? 'selected' : ''}>5★</option>
+							<option value="4" ${parseInt(r.rating || 5) === 4 ? 'selected' : ''}>4★</option>
+							<option value="3" ${parseInt(r.rating || 5) === 3 ? 'selected' : ''}>3★</option>
+							<option value="2" ${parseInt(r.rating || 5) === 2 ? 'selected' : ''}>2★</option>
+							<option value="1" ${parseInt(r.rating || 5) === 1 ? 'selected' : ''}>1★</option>
+						</select>
 					</div>
-					<div class="mm-edit-review-text">${escapeHtml(r.comment || '')}</div>
-					${(r.media || []).length ? `<div class="mm-edit-review-media">${r.media.map((m) => `<img src="${escapeHtml(m)}">`).join('')}</div>` : ''}
+					<input type="text" data-mm-review-date class="mm-input mm-mt-10" value="${escapeHtml(r.date || '')}" placeholder="Date">
+					<textarea data-mm-review-comment class="mm-textarea mm-mt-10" rows="2" placeholder="Review text">${escapeHtml(r.comment || '')}</textarea>
+					<input type="text" data-mm-review-media class="mm-input mm-mt-10" value="${escapeHtml((r.media || []).join(', '))}" placeholder="Media URLs (comma-separated)">
 				</div>
 			`).join('') : '<p class="mm-text-muted">No reviews scraped.</p>';
+			const variationRowsHtml = variationRows.length ? variationRows.map((v) => `
+				<tr data-mm-var-row="${id}">
+					<td><input type="text" data-mm-var-size class="mm-input" value="${escapeHtml(v.size || '')}" placeholder="Size"></td>
+					<td><input type="text" data-mm-var-sku class="mm-input" value="${escapeHtml(v.sku || '')}" placeholder="SKU"></td>
+					<td><input type="number" min="0" data-mm-var-stock class="mm-input" value="${escapeHtml(v.stock || v.stock === 0 ? v.stock : '')}" placeholder="Stock"></td>
+					<td><input type="number" min="0" step="0.01" data-mm-var-price class="mm-input" value="${escapeHtml(v.price || '')}" placeholder="Price"></td>
+					<td><input type="number" min="0" step="0.01" data-mm-var-mrp class="mm-input" value="${escapeHtml(v.mrp || '')}" placeholder="MRP"></td>
+					<td style="text-align:center;"><input type="checkbox" data-mm-var-oos ${v.oos || v.available === false ? 'checked' : ''}></td>
+				</tr>
+			`).join('') : '';
 
 			const attrsHtml = (d.attributes || []).length ? '<table style="width:100%;font-size:12px;">' +
 				d.attributes.map((a) => `<tr><td style="padding:3px 6px;color:#64748b;">${escapeHtml(a.name)}</td><td style="padding:3px 6px;font-weight:500;">${escapeHtml(a.value)}</td></tr>`).join('') +
@@ -329,7 +399,7 @@
 					<h4>Title <span class="mm-text-muted" style="font-weight:normal;font-size:11px;">(SKU ${escapeHtml(res.data.sku)})</span></h4>
 					<div class="mm-title-with-ai">
 						<input type="text" class="mm-input" id="mm_field_title_${id}" value="${escapeHtml(d.title || '')}">
-						<button class="mm-btn mm-btn-ai mm-btn-sm" data-mm-ai-title="${id}" title="Generate title using master prompt">✨ AI</button>
+						<button type="button" class="mm-btn mm-btn-ai mm-btn-sm" data-mm-ai-title="${id}" title="Generate title using master prompt">✨ AI</button>
 					</div>
 					<div class="mm-grid mm-grid-2 mm-mt-10">
 						<div><label class="mm-label">Source ₹</label><input type="number" step="0.01" class="mm-input" id="mm_field_price_${id}" value="${d.price || ''}"></div>
@@ -344,17 +414,35 @@
 					</div>
 					<label class="mm-label mm-mt-10">Description (HTML — same for all variations)</label>
 					<textarea class="mm-textarea" id="mm_field_desc_${id}" rows="6">${escapeHtml(d.description || '')}</textarea>
-					<button class="mm-btn mm-btn-ai mm-btn-sm mm-mt-10" data-mm-ai-desc="${id}">✨ AI Optimize Description</button>
+					<button type="button" class="mm-btn mm-btn-ai mm-btn-sm mm-mt-10" data-mm-ai-desc="${id}">✨ AI Optimize Description</button>
 					<div id="mm_optimize_status_${id}" class="mm-text-muted mm-mt-10" style="font-size:12px;"></div>
-					<label class="mm-label mm-mt-10">Sizes / Variations <span class="mm-text-muted" style="font-weight:normal;font-size:11px;">(creates variation per size when pushed: ${escapeHtml(res.data.sku)}-S, ${escapeHtml(res.data.sku)}-M…)</span></label>
-					<input type="text" class="mm-input" id="mm_field_sizes_${id}" value="${escapeHtml((d.sizes || []).map(s => typeof s === 'string' ? s : (s.size || '')).filter(Boolean).join(', '))}" placeholder="S, M, L, XL">
+					<label class="mm-label mm-mt-10">Variations (Size / SKU / Stock / OOS)</label>
+					<div style="overflow:auto;">
+						<table style="width:100%;border-collapse:collapse;font-size:12px;">
+							<thead><tr>
+								<th style="text-align:left;padding:6px;border-bottom:1px solid #e2e8f0;">Size</th>
+								<th style="text-align:left;padding:6px;border-bottom:1px solid #e2e8f0;">SKU</th>
+								<th style="text-align:left;padding:6px;border-bottom:1px solid #e2e8f0;">Stock</th>
+								<th style="text-align:left;padding:6px;border-bottom:1px solid #e2e8f0;">Price</th>
+								<th style="text-align:left;padding:6px;border-bottom:1px solid #e2e8f0;">MRP</th>
+								<th style="text-align:center;padding:6px;border-bottom:1px solid #e2e8f0;">OOS</th>
+							</tr></thead>
+							<tbody id="mm_var_table_${id}">${variationRowsHtml}</tbody>
+						</table>
+					</div>
+					<div class="mm-mt-10" style="display:flex;gap:8px;align-items:center;">
+						<button class="mm-btn mm-btn-outline mm-btn-sm" data-mm-var-add="${id}">+ Add Variation</button>
+						<label style="display:flex;gap:6px;align-items:center;font-size:12px;color:#475569;">
+							<input type="checkbox" id="mm_field_all_oos_${id}" ${d.all_out_of_stock ? 'checked' : ''}> Out of Stock for entire listing
+						</label>
+					</div>
 				</div>
 				<div class="mm-edit-section">
 					<h4>📷 Images (${(d.images || []).length})</h4>
 					<div class="mm-edit-images-grid">${(d.images || []).map((u) => `<img src="${escapeHtml(u)}">`).join('')}</div>
 					<details class="mm-mt-10"><summary style="cursor:pointer;font-weight:600;">🎨 Generate AI Image</summary>
 						<textarea class="mm-textarea mm-mt-10" id="mm_image_prompt_${id}" rows="2" placeholder="Leave blank to use master prompt with title auto-filled."></textarea>
-						<button class="mm-btn mm-btn-ai mm-btn-sm mm-mt-10" data-mm-ai-image="${id}">🎨 Generate</button>
+						<button type="button" class="mm-btn mm-btn-ai mm-btn-sm mm-mt-10" data-mm-ai-image="${id}">🎨 Generate</button>
 						<div id="mm_image_gen_status_${id}" class="mm-text-muted mm-mt-10" style="font-size:12px;"></div>
 						<div id="mm_image_gen_result_${id}"></div>
 					</details>
@@ -364,9 +452,9 @@
 				</div>
 				<div class="mm-edit-actions" style="grid-column:span 2;">
 					<span class="mm-edit-status" id="mm_panel_status_${id}"></span>
-					<button class="mm-btn mm-btn-outline" data-mm-cancel="${id}">Cancel</button>
-					<button class="mm-btn mm-btn-primary" data-mm-save="${id}">💾 Save</button>
-					<button class="mm-btn mm-btn-woo" data-mm-pushpanel="${id}">🚀 Push to WC</button>
+					<button type="button" class="mm-btn mm-btn-outline" data-mm-cancel="${id}">Cancel</button>
+					<button type="button" class="mm-btn mm-btn-primary" data-mm-save="${id}">💾 Save</button>
+					<button type="button" class="mm-btn mm-btn-woo" data-mm-pushpanel="${id}">🚀 Push to WC</button>
 				</div>`;
 
 			content.querySelector(`[data-mm-cancel="${id}"]`).addEventListener('click', () => panel.classList.add('mm-hidden'));
@@ -378,6 +466,23 @@
 			if (aiDesc) aiDesc.addEventListener('click', () => MM.aiOptimizeDesc(id));
 			const aiImage = content.querySelector(`[data-mm-ai-image="${id}"]`);
 			if (aiImage) aiImage.addEventListener('click', () => MM.aiGenerateImage(id));
+			const addVar = content.querySelector(`[data-mm-var-add="${id}"]`);
+			if (addVar) addVar.addEventListener('click', (e) => {
+				e.preventDefault();
+				const tbody = $(`#mm_var_table_${id}`);
+				if (!tbody) return;
+				const tr = document.createElement('tr');
+				tr.setAttribute('data-mm-var-row', id);
+				tr.innerHTML = `
+					<td><input type="text" data-mm-var-size class="mm-input" placeholder="Size"></td>
+					<td><input type="text" data-mm-var-sku class="mm-input" placeholder="SKU"></td>
+					<td><input type="number" min="0" data-mm-var-stock class="mm-input" placeholder="Stock"></td>
+					<td><input type="number" min="0" step="0.01" data-mm-var-price class="mm-input" placeholder="Price"></td>
+					<td><input type="number" min="0" step="0.01" data-mm-var-mrp class="mm-input" placeholder="MRP"></td>
+					<td style="text-align:center;"><input type="checkbox" data-mm-var-oos></td>
+				`;
+				tbody.appendChild(tr);
+			});
 			if (scrollToAi) {
 				setTimeout(() => aiDesc && aiDesc.scrollIntoView({ behavior: 'smooth', block: 'center' }), 200);
 			}
@@ -390,9 +495,11 @@
 			price: parseFloat(($(`#mm_field_price_${id}`) || {}).value) || 0,
 			mrp: parseFloat(($(`#mm_field_mrp_${id}`) || {}).value) || 0,
 			description: ($(`#mm_field_desc_${id}`) || {}).value || '',
-			sizes: (($(`#mm_field_sizes_${id}`) || {}).value || '').split(',').map((s) => s.trim()).filter(Boolean),
+			sizes: readVariationRowsFromPanel(id),
+			reviews: readReviewsFromPanel(id),
 			override_price: parseFloat(($(`#mm_field_op_${id}`) || {}).value) || 0,
 			override_mrp: parseFloat(($(`#mm_field_om_${id}`) || {}).value) || 0,
+			all_out_of_stock: !!(($(`#mm_field_all_oos_${id}`) || {}).checked),
 		};
 		const status = $(`#mm_panel_status_${id}`);
 		if (status) status.textContent = '⏳ Saving…';

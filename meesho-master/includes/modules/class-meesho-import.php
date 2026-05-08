@@ -389,7 +389,8 @@ class Meesho_Master_Import {
 		}
 
 		// Duplicate check
-		$duplicate = $this->check_duplicate( $meesho_sku );
+		$ignore_staged_id = intval( $data['_staged_row_id'] ?? 0 );
+		$duplicate = $this->check_duplicate( $meesho_sku, $ignore_staged_id );
 		if ( $duplicate ) {
 			return array(
 				'status'     => 'duplicate',
@@ -411,6 +412,7 @@ class Meesho_Master_Import {
 			$overrides = array(
 				'override_price' => floatval( $data['override_price'] ?? 0 ),
 				'override_mrp'   => floatval( $data['override_mrp'] ?? 0 ),
+				'all_out_of_stock' => ! empty( $data['all_out_of_stock'] ),
 			);
 			$this->create_variations( $parent_id, $meesho_sku, $data['sizes'], $overrides );
 		}
@@ -467,14 +469,22 @@ class Meesho_Master_Import {
 	 *  Duplicate check
 	 * ================================================================ */
 
-	private function check_duplicate( $meesho_sku ) {
+	private function check_duplicate( $meesho_sku, $ignore_staged_id = 0 ) {
 		global $wpdb;
 
 		// 1. Check staging/published rows in mm_products (catches scraped-but-not-pushed items)
-		$staged = $wpdb->get_var( $wpdb->prepare(
-			'SELECT id FROM ' . MM_DB::table( 'products' ) . ' WHERE meesho_sku = %s LIMIT 1',
-			$meesho_sku
-		) );
+		if ( $ignore_staged_id > 0 ) {
+			$staged = $wpdb->get_var( $wpdb->prepare(
+				'SELECT id FROM ' . MM_DB::table( 'products' ) . ' WHERE meesho_sku = %s AND id <> %d LIMIT 1',
+				$meesho_sku,
+				$ignore_staged_id
+			) );
+		} else {
+			$staged = $wpdb->get_var( $wpdb->prepare(
+				'SELECT id FROM ' . MM_DB::table( 'products' ) . ' WHERE meesho_sku = %s LIMIT 1',
+				$meesho_sku
+			) );
+		}
 		if ( $staged ) {
 			return intval( $staged );
 		}
@@ -498,14 +508,6 @@ class Meesho_Master_Import {
 		}
 
 		// Also check our custom table
-		$existing = $wpdb->get_var( $wpdb->prepare(
-			"SELECT wc_product_id FROM {$products_table} WHERE meesho_sku = %s LIMIT 1",
-			$meesho_sku
-		) );
-		if ( $existing ) {
-			return intval( $existing );
-		}
-
 		return false;
 	}
 
@@ -528,12 +530,21 @@ class Meesho_Master_Import {
 		$attribute = new WC_Product_Attribute();
 		$attribute->set_name( 'Size' );
 		$sizes_list = array();
-		if ( ! empty( $data['sizes'] ) ) {
+		if ( ! empty( $data['sizes'] ) && is_array( $data['sizes'] ) ) {
 			foreach ( $data['sizes'] as $s ) {
-				$sizes_list[] = strtoupper( $s['size'] );
+				$size_val = '';
+				if ( is_array( $s ) && ! empty( $s['size'] ) ) {
+					$size_val = (string) $s['size'];
+				} elseif ( is_string( $s ) && '' !== trim( $s ) ) {
+					$size_val = trim( $s );
+				}
+				if ( '' === $size_val ) {
+					continue;
+				}
+				$sizes_list[] = strtoupper( $size_val );
 			}
 		}
-		$attribute->set_options( array_unique( $sizes_list ) );
+		$attribute->set_options( array_values( array_unique( $sizes_list ) ) );
 		$attribute->set_visible( true );
 		$attribute->set_variation( true );
 		$product->set_attributes( array( $attribute ) );
@@ -570,15 +581,32 @@ class Meesho_Master_Import {
 			if ( ! empty( $product_overrides['override_mrp'] ) ) {
 				$size_data['override_mrp'] = $product_overrides['override_mrp'];
 			}
-			$size_name     = strtoupper( $size_data['size'] );
-			$variation_sku = $meesho_sku . '-' . $size_name;
-			$stock_status  = ! empty( $size_data['available'] ) ? 'instock' : 'outofstock';
+			if ( ! empty( $product_overrides['all_out_of_stock'] ) ) {
+				$size_data['all_out_of_stock'] = true;
+			}
+			$size_name      = strtoupper( sanitize_text_field( (string) $size_data['size'] ) );
+			$size_for_sku   = preg_replace( '/[^A-Z0-9\-_]/', '', str_replace( ' ', '-', $size_name ) );
+			$explicit_sku   = sanitize_text_field( (string) ( $size_data['sku'] ?? '' ) );
+			$variation_sku  = '' !== $explicit_sku ? $explicit_sku : ( $meesho_sku . '-' . $size_for_sku );
+			$stock_quantity = isset( $size_data['stock'] ) && '' !== $size_data['stock'] ? max( 0, intval( $size_data['stock'] ) ) : null;
+			$force_oos      = ! empty( $size_data['oos'] ) || ! empty( $size_data['out_of_stock'] );
+			$all_oos        = ! empty( $size_data['all_out_of_stock'] );
+			$is_available   = isset( $size_data['available'] ) ? (bool) $size_data['available'] : true;
+			if ( null !== $stock_quantity && $stock_quantity <= 0 ) {
+				$is_available = false;
+			}
+			$stock_status = ( $force_oos || $all_oos || ! $is_available ) ? 'outofstock' : 'instock';
 
 			$variation = new WC_Product_Variation();
 			$variation->set_parent_id( $parent_id );
 			$variation->set_sku( $variation_sku );
 			$variation->set_stock_status( $stock_status );
-			$variation->set_manage_stock( false );
+			if ( null !== $stock_quantity ) {
+				$variation->set_manage_stock( true );
+				$variation->set_stock_quantity( $stock_quantity );
+			} else {
+				$variation->set_manage_stock( false );
+			}
 			$variation->set_attributes( array( 'size' => $size_name ) );
 
 			// Pricing with markup (or manual override from product data)
@@ -598,7 +626,10 @@ class Meesho_Master_Import {
 				$variation->set_sale_price( $selling_price );
 			}
 
-			$variation->save();
+			$variation_id = $variation->save();
+			if ( $variation_id ) {
+				update_post_meta( $variation_id, 'attribute_size', $size_name );
+			}
 		}
 	}
 
@@ -848,12 +879,29 @@ class Meesho_Master_Import {
 			$data = json_decode( $r->scraped_data, true );
 			// Sizes can be strings or {size,...} objects — normalize to label list
 			$size_labels = array();
+			$variation_rows = array();
 			if ( is_array( $data['sizes'] ?? null ) ) {
 				foreach ( $data['sizes'] as $s ) {
 					if ( is_string( $s ) && trim( $s ) !== '' ) {
-						$size_labels[] = strtoupper( trim( $s ) );
+						$sz = strtoupper( trim( $s ) );
+						$size_labels[] = $sz;
+						$variation_rows[] = array(
+							'size'      => $sz,
+							'sku'       => $r->meesho_sku . '-' . preg_replace( '/[^A-Z0-9\-_]/', '', str_replace( ' ', '-', $sz ) ),
+							'stock'     => '',
+							'available' => true,
+							'oos'       => false,
+						);
 					} elseif ( is_array( $s ) && ! empty( $s['size'] ) ) {
-						$size_labels[] = strtoupper( $s['size'] );
+						$sz = strtoupper( $s['size'] );
+						$size_labels[] = $sz;
+						$variation_rows[] = array(
+							'size'      => $sz,
+							'sku'       => ! empty( $s['sku'] ) ? (string) $s['sku'] : ( $r->meesho_sku . '-' . preg_replace( '/[^A-Z0-9\-_]/', '', str_replace( ' ', '-', $sz ) ) ),
+							'stock'     => isset( $s['stock'] ) ? $s['stock'] : '',
+							'available' => isset( $s['available'] ) ? (bool) $s['available'] : true,
+							'oos'       => ! empty( $s['oos'] ) || ! empty( $s['out_of_stock'] ),
+						);
 					}
 				}
 			}
@@ -885,6 +933,7 @@ class Meesho_Master_Import {
 				'images_preview' => is_array( $data['images'] ?? null ) ? array_slice( $data['images'], 0, 4 ) : array(),
 				'images_count'   => is_array( $data['images'] ?? null ) ? count( $data['images'] ) : 0,
 				'sizes'          => $size_labels,
+				'variation_rows' => $variation_rows,
 				'price'          => $raw_price,
 				'mrp'            => $data['mrp'] ?? 0,
 				'override_price' => $override_price,
@@ -921,12 +970,17 @@ class Meesho_Master_Import {
 			wp_send_json_error( 'Not found.' );
 		}
 		$data = json_decode( $row->scraped_data, true );
+		$settings = new Meesho_Master_Settings();
+		$raw_price = (float) ( is_array( $data ) ? ( $data['price'] ?? 0 ) : 0 );
+		$override_price = (float) ( is_array( $data ) ? ( $data['override_price'] ?? 0 ) : 0 );
+		$our_price = $override_price > 0 ? $override_price : $settings->calculate_selling_price( $raw_price );
 		wp_send_json_success( array(
 			'id'         => (int) $row->id,
 			'sku'        => $row->meesho_sku,
 			'meesho_url' => $row->meesho_url,
 			'status'     => $row->status,
 			'wc_product_id' => (int) $row->wc_product_id,
+			'our_price'  => $our_price,
 			'data'       => is_array( $data ) ? $data : array(),
 		) );
 	}
@@ -959,7 +1013,7 @@ class Meesho_Master_Import {
 			$data = array();
 		}
 		// Whitelisted editable fields
-		$allowed = array( 'title', 'description', 'price', 'mrp', 'brand', 'images', 'sizes', 'override_price', 'override_mrp' );
+		$allowed = array( 'title', 'description', 'price', 'mrp', 'brand', 'images', 'sizes', 'reviews', 'override_price', 'override_mrp', 'all_out_of_stock' );
 		foreach ( $allowed as $k ) {
 			if ( array_key_exists( $k, $fields ) ) {
 				$data[ $k ] = $fields[ $k ];
@@ -1005,10 +1059,14 @@ class Meesho_Master_Import {
 		}
 		$data['meesho_url'] = $row->meesho_url;
 		$data['meesho_sku_override'] = $row->meesho_sku;
+		$data['_staged_row_id'] = $id;
 
 		try {
 			// process_import handles all the WC heavy lifting (parent + variations + images + reviews)
 			$result = $this->process_import( $data );
+			if ( isset( $result['status'] ) && 'duplicate' === $result['status'] ) {
+				wp_send_json_error( $result['message'] ?? 'Duplicate product exists.' );
+			}
 			if ( ! empty( $result['product_id'] ) ) {
 				$wpdb->update(
 					$table,
