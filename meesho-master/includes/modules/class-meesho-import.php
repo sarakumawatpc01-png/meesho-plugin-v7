@@ -12,6 +12,7 @@ class Meesho_Master_Import {
 	private const ORDERED_LIST_PREFIX_PATTERN = '\\d+[\\.\\)]\\s+';
 	private const UNORDERED_LIST_PREFIX_PATTERN = '[-*•]\\s+';
 	private const DEFAULT_IMAGE_ALT = 'Product image';
+	private const IMAGE_FALLBACK_ATTRS = array( 'data-src', 'data-original', 'data-lazy-src' );
 
 	private $settings;
 	private $undo;
@@ -943,11 +944,11 @@ class Meesho_Master_Import {
 	}
 
 	private function strip_list_prefix( $line ) {
-		if ( preg_match( '/^' . self::ORDERED_LIST_PREFIX_PATTERN . '(.+)$/u', (string) $line, $match ) ) {
-			return $match[1];
+		if ( preg_match( '/^' . self::ORDERED_LIST_PREFIX_PATTERN . '(.*)$/u', (string) $line, $match ) ) {
+			return trim( $match[1] );
 		}
-		if ( preg_match( '/^' . self::UNORDERED_LIST_PREFIX_PATTERN . '(.+)$/u', (string) $line, $match ) ) {
-			return $match[1];
+		if ( preg_match( '/^' . self::UNORDERED_LIST_PREFIX_PATTERN . '(.*)$/u', (string) $line, $match ) ) {
+			return trim( $match[1] );
 		}
 		return trim( (string) $line );
 	}
@@ -1083,25 +1084,20 @@ class Meesho_Master_Import {
 			$tag = strtolower( $node->nodeName );
 			$allowed_attrs = isset( $allowed[ $tag ] ) ? array_keys( $allowed[ $tag ] ) : array();
 			if ( 'img' === $tag ) {
-				$src = trim( $node->getAttribute( 'src' ) );
+				$src = $this->sanitize_image_src( $node->getAttribute( 'src' ) );
 				if ( '' !== $src ) {
-					$sanitized_src = $this->sanitize_image_src( $src );
-					if ( '' === $sanitized_src ) {
-						$node->removeAttribute( 'src' );
-					} else {
-						$node->setAttribute( 'src', $sanitized_src );
-					}
+					$node->setAttribute( 'src', $src );
 				} else {
-					foreach ( array( 'data-src', 'data-original', 'data-lazy-src' ) as $fallback ) {
-						$fallback_value = trim( $node->getAttribute( $fallback ) );
-						$fallback_value = $this->sanitize_image_src( $fallback_value );
+					$node->removeAttribute( 'src' );
+					foreach ( self::IMAGE_FALLBACK_ATTRS as $fallback ) {
+						$fallback_value = $this->sanitize_image_src( $node->getAttribute( $fallback ) );
 						if ( '' !== $fallback_value ) {
 							$node->setAttribute( 'src', $fallback_value );
 							break;
 						}
 					}
 				}
-				foreach ( array( 'data-src', 'data-original', 'data-lazy-src' ) as $fallback ) {
+				foreach ( self::IMAGE_FALLBACK_ATTRS as $fallback ) {
 					if ( $node->hasAttribute( $fallback ) ) {
 						$node->removeAttribute( $fallback );
 					}
