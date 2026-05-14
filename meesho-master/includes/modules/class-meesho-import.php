@@ -740,6 +740,8 @@ class Meesho_Master_Import {
 		$html = preg_replace( '/<style[^>]*>.*?<\/style>/is', '', $html );
 		$html = preg_replace( '/<noscript[^>]*>.*?<\/noscript>/is', '', $html );
 
+		$html = $this->format_description_plain_text( $html );
+
 		if ( class_exists( 'DOMDocument' ) ) {
 			$flags = 0;
 			if ( defined( 'LIBXML_HTML_NOIMPLIED' ) ) {
@@ -769,6 +771,172 @@ class Meesho_Master_Import {
 		$html = wp_kses( $html, $this->description_allowed_tags() );
 
 		return trim( $html );
+	}
+
+	private function format_description_plain_text( $text ) {
+		if ( empty( $text ) || preg_match( '/<[^>]+>/', $text ) ) {
+			return $text;
+		}
+
+		$text = trim( preg_replace( "/\r\n|\r/", "\n", (string) $text ) );
+		if ( '' === $text ) {
+			return '';
+		}
+
+		$blocks = preg_split( "/\n\s*\n/", $text );
+		$out = array();
+		foreach ( $blocks as $block ) {
+			$block = trim( $block );
+			if ( '' === $block ) {
+				continue;
+			}
+			$lines = array_values( array_filter( array_map( 'trim', preg_split( "/\n+/", $block ) ) ) );
+			if ( empty( $lines ) ) {
+				continue;
+			}
+			$out[] = $this->format_description_lines( $lines );
+		}
+
+		return implode( "\n", array_filter( $out ) );
+	}
+
+	private function format_description_lines( array $lines ) {
+		if ( empty( $lines ) ) {
+			return '';
+		}
+
+		$heading = '';
+		if ( count( $lines ) > 1 && $this->is_heading_line( $lines[0] ) ) {
+			$heading = $this->normalize_heading_text( $lines[0] );
+			$lines = array_slice( $lines, 1 );
+		}
+
+		$body = $this->render_description_block( $lines );
+		if ( '' === $heading ) {
+			return $body;
+		}
+
+		return '<h3>' . esc_html( $heading ) . '</h3>' . $body;
+	}
+
+	private function render_description_block( array $lines ) {
+		if ( empty( $lines ) ) {
+			return '';
+		}
+
+		if ( $this->all_image_lines( $lines ) ) {
+			$imgs = array();
+			foreach ( $lines as $line ) {
+				$url = $this->extract_image_url( $line );
+				if ( $url ) {
+					$imgs[] = '<p><img src="' . esc_url( $url ) . '" alt=""></p>';
+				}
+			}
+			return implode( '', $imgs );
+		}
+
+		if ( $this->all_key_value_lines( $lines ) ) {
+			$rows = array();
+			foreach ( $lines as $line ) {
+				$pair = $this->split_key_value_line( $line );
+				if ( ! $pair ) {
+					continue;
+				}
+				$rows[] = '<tr><th>' . esc_html( $pair['key'] ) . '</th><td>' . esc_html( $pair['value'] ) . '</td></tr>';
+			}
+			return '<table><tbody>' . implode( '', $rows ) . '</tbody></table>';
+		}
+
+		$list_type = $this->detect_list_type( $lines );
+		if ( $list_type ) {
+			$items = array();
+			foreach ( $lines as $line ) {
+				$text = $this->strip_list_prefix( $line );
+				if ( '' !== $text ) {
+					$items[] = '<li>' . esc_html( $text ) . '</li>';
+				}
+			}
+			return '<' . $list_type . '>' . implode( '', $items ) . '</' . $list_type . '>';
+		}
+
+		$body = esc_html( implode( "\n", $lines ) );
+		$body = nl2br( $body, false );
+		return '<p>' . $body . '</p>';
+	}
+
+	private function is_heading_line( $line ) {
+		return (bool) preg_match( '/^[A-Za-z0-9][A-Za-z0-9\s\/\-\&\(\)]{0,60}:\s*$/', (string) $line );
+	}
+
+	private function normalize_heading_text( $line ) {
+		return trim( rtrim( (string) $line, ":\t " ) );
+	}
+
+	private function all_image_lines( array $lines ) {
+		foreach ( $lines as $line ) {
+			if ( ! $this->extract_image_url( $line ) ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private function extract_image_url( $line ) {
+		$line = trim( (string) $line );
+		if ( preg_match( '#^https?://\S+\.(?:png|jpe?g|gif|webp|avif)(?:\?\S+)?$#i', $line ) ) {
+			return $line;
+		}
+		return '';
+	}
+
+	private function all_key_value_lines( array $lines ) {
+		foreach ( $lines as $line ) {
+			if ( ! $this->split_key_value_line( $line ) ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private function split_key_value_line( $line ) {
+		if ( preg_match( '/^([^:]{1,40}):\s*(.+)$/', (string) $line, $match ) ) {
+			return array(
+				'key'   => trim( $match[1] ),
+				'value' => trim( $match[2] ),
+			);
+		}
+		return null;
+	}
+
+	private function detect_list_type( array $lines ) {
+		$ordered = true;
+		$unordered = true;
+		foreach ( $lines as $line ) {
+			if ( preg_match( '/^\d+[\.\)]\s+/', (string) $line ) ) {
+				$unordered = false;
+			} elseif ( preg_match( '/^[-*•]\s+/u', (string) $line ) ) {
+				$ordered = false;
+			} else {
+				return '';
+			}
+		}
+		if ( $ordered ) {
+			return 'ol';
+		}
+		if ( $unordered ) {
+			return 'ul';
+		}
+		return '';
+	}
+
+	private function strip_list_prefix( $line ) {
+		if ( preg_match( '/^\d+[\.\)]\s+(.+)$/', (string) $line, $match ) ) {
+			return $match[1];
+		}
+		if ( preg_match( '/^[-*•]\s+(.+)$/u', (string) $line, $match ) ) {
+			return $match[1];
+		}
+		return trim( (string) $line );
 	}
 
 	private function description_allowed_tags() {
@@ -901,6 +1069,18 @@ class Meesho_Master_Import {
 			}
 			$tag = strtolower( $node->nodeName );
 			$allowed_attrs = isset( $allowed[ $tag ] ) ? array_keys( $allowed[ $tag ] ) : array();
+			if ( 'img' === $tag ) {
+				$src = trim( $node->getAttribute( 'src' ) );
+				if ( '' === $src ) {
+					foreach ( array( 'data-src', 'data-original', 'data-lazy-src' ) as $fallback ) {
+						$fallback_value = trim( $node->getAttribute( $fallback ) );
+						if ( '' !== $fallback_value ) {
+							$node->setAttribute( 'src', esc_url_raw( $fallback_value ) );
+							break;
+						}
+					}
+				}
+			}
 			if ( $node->hasAttributes() ) {
 				$attrs = array();
 				foreach ( $node->attributes as $attr ) {
