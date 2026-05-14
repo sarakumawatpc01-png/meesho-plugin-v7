@@ -730,27 +730,49 @@ class Meesho_Master_Import {
 			return '';
 		}
 
+		$html = html_entity_decode( (string) $html, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+
 		// Strip Meesho brand references
 		$html = preg_replace( '/(?:Buy\s+on\s+)?Meesho/i', '', $html );
 
-		// Strip price tables
-		$html = preg_replace( '/<table[^>]*>.*?<\/table>/is', '', $html );
-
-		// Strip inline styles
-		$html = preg_replace( '/\s*style\s*=\s*"[^"]*"/i', '', $html );
-		$html = preg_replace( '/\s*style\s*=\s*\'[^\']*\'/i', '', $html );
-
-		// Strip empty HTML tags
-		$html = preg_replace( '/<(p|span|div|b|i|strong|em)\s*>\s*<\/\1>/i', '', $html );
-		// Run twice to catch nested empties
-		$html = preg_replace( '/<(p|span|div|b|i|strong|em)\s*>\s*<\/\1>/i', '', $html );
-
-		// Strip script and noscript tags
+		// Strip script/style tags early
 		$html = preg_replace( '/<script[^>]*>.*?<\/script>/is', '', $html );
+		$html = preg_replace( '/<style[^>]*>.*?<\/style>/is', '', $html );
 		$html = preg_replace( '/<noscript[^>]*>.*?<\/noscript>/is', '', $html );
 
+		if ( class_exists( 'DOMDocument' ) ) {
+			$flags = 0;
+			if ( defined( 'LIBXML_HTML_NOIMPLIED' ) ) {
+				$flags |= LIBXML_HTML_NOIMPLIED;
+			}
+			if ( defined( 'LIBXML_HTML_NODEFDTD' ) ) {
+				$flags |= LIBXML_HTML_NODEFDTD;
+			}
+			libxml_use_internal_errors( true );
+			$doc = new DOMDocument();
+			$doc->loadHTML( '<?xml encoding="utf-8" ?>' . $html, $flags );
+			libxml_clear_errors();
+
+			$this->strip_unwanted_description_nodes( $doc );
+			$this->replace_heading_level( $doc, 'h1', 'h2' );
+			$this->normalize_description_blocks( $doc );
+			$this->strip_disallowed_attributes( $doc );
+
+			$html = $doc->saveHTML();
+		}
+
+		// Normalize spacing and remove empty tags
+		$html = preg_replace( '/(<br\s*\/?>\s*){3,}/i', '<br><br>', $html );
+		$html = preg_replace( '/<(p|span|div|b|i|strong|em|h2|h3|h4)\s*>\s*<\/\1>/i', '', $html );
+
 		// Allowed tags for WooCommerce product description
-		$html = wp_kses( $html, array(
+		$html = wp_kses( $html, $this->description_allowed_tags() );
+
+		return trim( $html );
+	}
+
+	private function description_allowed_tags() {
+		return array(
 			'p'      => array(),
 			'br'     => array(),
 			'ul'     => array(),
@@ -767,11 +789,141 @@ class Meesho_Master_Import {
 			'thead'  => array(),
 			'tbody'  => array(),
 			'tr'     => array(),
-			'th'     => array(),
-			'td'     => array(),
-		) );
+			'th'     => array(
+				'colspan' => true,
+				'rowspan' => true,
+				'scope'   => true,
+			),
+			'td'     => array(
+				'colspan' => true,
+				'rowspan' => true,
+			),
+			'img'    => array(
+				'src'   => true,
+				'alt'   => true,
+				'title' => true,
+				'width' => true,
+				'height' => true,
+			),
+			'a'      => array(
+				'href'   => true,
+				'title'  => true,
+				'target' => true,
+				'rel'    => true,
+			),
+		);
+	}
 
-		return trim( $html );
+	private function strip_unwanted_description_nodes( DOMDocument $doc ) {
+		$remove_tags = array( 'script', 'style', 'noscript', 'iframe', 'object', 'embed', 'form', 'input', 'button', 'link', 'meta', 'svg', 'canvas', 'video', 'audio' );
+		foreach ( $remove_tags as $tag ) {
+			$nodes = $doc->getElementsByTagName( $tag );
+			for ( $i = $nodes->length - 1; $i >= 0; $i-- ) {
+				$node = $nodes->item( $i );
+				if ( $node && $node->parentNode ) {
+					$node->parentNode->removeChild( $node );
+				}
+			}
+		}
+	}
+
+	private function normalize_description_blocks( DOMDocument $doc ) {
+		$block_tags = array( 'p', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote' );
+
+		$divs = $doc->getElementsByTagName( 'div' );
+		for ( $i = $divs->length - 1; $i >= 0; $i-- ) {
+			$div = $divs->item( $i );
+			if ( ! $div || ! $div->parentNode ) {
+				continue;
+			}
+			$has_block_child = false;
+			foreach ( $div->childNodes as $child ) {
+				if ( XML_ELEMENT_NODE === $child->nodeType && in_array( strtolower( $child->nodeName ), $block_tags, true ) ) {
+					$has_block_child = true;
+					break;
+				}
+			}
+			if ( $has_block_child ) {
+				$this->unwrap_node( $div );
+				continue;
+			}
+			$this->replace_node_tag( $div, 'p' );
+		}
+
+		$spans = $doc->getElementsByTagName( 'span' );
+		for ( $i = $spans->length - 1; $i >= 0; $i-- ) {
+			$span = $spans->item( $i );
+			if ( $span && $span->parentNode ) {
+				$this->unwrap_node( $span );
+			}
+		}
+	}
+
+	private function replace_heading_level( DOMDocument $doc, $from_tag, $to_tag ) {
+		$headings = $doc->getElementsByTagName( $from_tag );
+		for ( $i = $headings->length - 1; $i >= 0; $i-- ) {
+			$heading = $headings->item( $i );
+			if ( ! $heading || ! $heading->parentNode ) {
+				continue;
+			}
+			$this->replace_node_tag( $heading, $to_tag );
+		}
+	}
+
+	private function replace_node_tag( DOMNode $node, $new_tag ) {
+		if ( ! $node->parentNode ) {
+			return;
+		}
+		$doc = $node->ownerDocument;
+		$replacement = $doc->createElement( $new_tag );
+		while ( $node->firstChild ) {
+			$replacement->appendChild( $node->firstChild );
+		}
+		$node->parentNode->replaceChild( $replacement, $node );
+	}
+
+	private function unwrap_node( DOMNode $node ) {
+		if ( ! $node->parentNode ) {
+			return;
+		}
+		while ( $node->firstChild ) {
+			$node->parentNode->insertBefore( $node->firstChild, $node );
+		}
+		$node->parentNode->removeChild( $node );
+	}
+
+	private function strip_disallowed_attributes( DOMDocument $doc ) {
+		$allowed = $this->description_allowed_tags();
+		$xpath = new DOMXPath( $doc );
+		foreach ( $xpath->query( '//*' ) as $node ) {
+			if ( ! $node instanceof DOMElement ) {
+				continue;
+			}
+			$tag = strtolower( $node->nodeName );
+			$allowed_attrs = isset( $allowed[ $tag ] ) ? array_keys( $allowed[ $tag ] ) : array();
+			if ( $node->hasAttributes() ) {
+				$attrs = array();
+				foreach ( $node->attributes as $attr ) {
+					$attrs[] = $attr->nodeName;
+				}
+				foreach ( $attrs as $attr_name ) {
+					if ( ! in_array( strtolower( $attr_name ), $allowed_attrs, true ) ) {
+						$node->removeAttribute( $attr_name );
+					}
+				}
+			}
+			if ( 'a' === $tag && $node->hasAttribute( 'target' ) && '_blank' === strtolower( $node->getAttribute( 'target' ) ) ) {
+				$rel = $node->getAttribute( 'rel' );
+				if ( false === stripos( $rel, 'noopener' ) ) {
+					$node->setAttribute( 'rel', trim( $rel . ' noopener noreferrer' ) );
+				}
+			}
+			if ( 'img' === $tag && '' === trim( $node->getAttribute( 'src' ) ) ) {
+				if ( $node->parentNode ) {
+					$node->parentNode->removeChild( $node );
+				}
+			}
+		}
 	}
 
 	/* ================================================================
