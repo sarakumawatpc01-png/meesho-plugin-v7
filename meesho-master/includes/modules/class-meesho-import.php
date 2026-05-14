@@ -9,6 +9,10 @@
 
 class Meesho_Master_Import {
 
+	private const ORDERED_LIST_PREFIX_PATTERN = '^\\d+[\\.\\)]\\s+';
+	private const UNORDERED_LIST_PREFIX_PATTERN = '^[-*•]\\s+';
+	private const DEFAULT_IMAGE_ALT = 'Product image';
+
 	private $settings;
 	private $undo;
 
@@ -829,7 +833,7 @@ class Meesho_Master_Import {
 			foreach ( $lines as $line ) {
 				$url = $this->extract_image_url( $line );
 				if ( $url ) {
-					$imgs[] = '<p><img src="' . esc_url( $url ) . '" alt=""></p>';
+					$imgs[] = '<p><img src="' . esc_url( $url ) . '" alt="' . esc_attr( self::DEFAULT_IMAGE_ALT ) . '"></p>';
 				}
 			}
 			return implode( '', $imgs );
@@ -912,9 +916,9 @@ class Meesho_Master_Import {
 		$ordered = true;
 		$unordered = true;
 		foreach ( $lines as $line ) {
-			if ( preg_match( '/^\d+[\.\)]\s+/', (string) $line ) ) {
+			if ( preg_match( '/' . self::ORDERED_LIST_PREFIX_PATTERN . '/', (string) $line ) ) {
 				$unordered = false;
-			} elseif ( preg_match( '/^[-*•]\s+/u', (string) $line ) ) {
+			} elseif ( preg_match( '/' . self::UNORDERED_LIST_PREFIX_PATTERN . '/u', (string) $line ) ) {
 				$ordered = false;
 			} else {
 				return '';
@@ -930,10 +934,10 @@ class Meesho_Master_Import {
 	}
 
 	private function strip_list_prefix( $line ) {
-		if ( preg_match( '/^\d+[\.\)]\s+(.+)$/', (string) $line, $match ) ) {
+		if ( preg_match( '/' . self::ORDERED_LIST_PREFIX_PATTERN . '(.+)$/', (string) $line, $match ) ) {
 			return $match[1];
 		}
-		if ( preg_match( '/^[-*•]\s+(.+)$/u', (string) $line, $match ) ) {
+		if ( preg_match( '/' . self::UNORDERED_LIST_PREFIX_PATTERN . '(.+)$/u', (string) $line, $match ) ) {
 			return $match[1];
 		}
 		return trim( (string) $line );
@@ -1074,11 +1078,15 @@ class Meesho_Master_Import {
 				if ( '' === $src ) {
 					foreach ( array( 'data-src', 'data-original', 'data-lazy-src' ) as $fallback ) {
 						$fallback_value = trim( $node->getAttribute( $fallback ) );
+						$fallback_value = $this->sanitize_image_src( $fallback_value );
 						if ( '' !== $fallback_value ) {
-							$node->setAttribute( 'src', esc_url_raw( $fallback_value ) );
+							$node->setAttribute( 'src', $fallback_value );
 							break;
 						}
 					}
+				}
+				if ( '' === trim( $node->getAttribute( 'alt' ) ) ) {
+					$node->setAttribute( 'alt', self::DEFAULT_IMAGE_ALT );
 				}
 			}
 			if ( $node->hasAttributes() ) {
@@ -1104,6 +1112,18 @@ class Meesho_Master_Import {
 				}
 			}
 		}
+	}
+
+	private function sanitize_image_src( $src ) {
+		$src = trim( (string) $src );
+		if ( '' === $src ) {
+			return '';
+		}
+		$validated = wp_http_validate_url( $src );
+		if ( ! $validated ) {
+			return '';
+		}
+		return esc_url_raw( $validated );
 	}
 
 	/* ================================================================
