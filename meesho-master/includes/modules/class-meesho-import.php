@@ -9,8 +9,8 @@
 
 class Meesho_Master_Import {
 
-	private const ORDERED_LIST_PREFIX_PATTERN = '^\\d+[\\.\\)]\\s+';
-	private const UNORDERED_LIST_PREFIX_PATTERN = '^[-*•]\\s+';
+	private const ORDERED_LIST_PREFIX_PATTERN = '\\d+[\\.\\)]\\s+';
+	private const UNORDERED_LIST_PREFIX_PATTERN = '[-*•]\\s+';
 	private const DEFAULT_IMAGE_ALT = 'Product image';
 
 	private $settings;
@@ -916,9 +916,9 @@ class Meesho_Master_Import {
 		$ordered = true;
 		$unordered = true;
 		foreach ( $lines as $line ) {
-			if ( preg_match( '/' . self::ORDERED_LIST_PREFIX_PATTERN . '/', (string) $line ) ) {
+			if ( preg_match( '/^' . self::ORDERED_LIST_PREFIX_PATTERN . '/', (string) $line ) ) {
 				$unordered = false;
-			} elseif ( preg_match( '/' . self::UNORDERED_LIST_PREFIX_PATTERN . '/u', (string) $line ) ) {
+			} elseif ( preg_match( '/^' . self::UNORDERED_LIST_PREFIX_PATTERN . '/u', (string) $line ) ) {
 				$ordered = false;
 			} else {
 				return '';
@@ -934,10 +934,10 @@ class Meesho_Master_Import {
 	}
 
 	private function strip_list_prefix( $line ) {
-		if ( preg_match( '/' . self::ORDERED_LIST_PREFIX_PATTERN . '(.+)$/', (string) $line, $match ) ) {
+		if ( preg_match( '/^' . self::ORDERED_LIST_PREFIX_PATTERN . '(.+)$/', (string) $line, $match ) ) {
 			return $match[1];
 		}
-		if ( preg_match( '/' . self::UNORDERED_LIST_PREFIX_PATTERN . '(.+)$/u', (string) $line, $match ) ) {
+		if ( preg_match( '/^' . self::UNORDERED_LIST_PREFIX_PATTERN . '(.+)$/u', (string) $line, $match ) ) {
 			return $match[1];
 		}
 		return trim( (string) $line );
@@ -1101,8 +1101,8 @@ class Meesho_Master_Import {
 				}
 			}
 			if ( 'a' === $tag && $node->hasAttribute( 'target' ) && '_blank' === strtolower( $node->getAttribute( 'target' ) ) ) {
-				$rel = $node->getAttribute( 'rel' );
-				if ( false === stripos( $rel, 'noopener' ) ) {
+				$rel = trim( $node->getAttribute( 'rel' ) );
+				if ( ! preg_match( '/\\bnoopener\\b/i', $rel ) ) {
 					$node->setAttribute( 'rel', trim( $rel . ' noopener noreferrer' ) );
 				}
 			}
@@ -1119,11 +1119,11 @@ class Meesho_Master_Import {
 		if ( '' === $src ) {
 			return '';
 		}
-		$validated = wp_http_validate_url( $src );
-		if ( ! $validated ) {
+		$validated_url = wp_http_validate_url( $src );
+		if ( ! $validated_url ) {
 			return '';
 		}
-		return esc_url_raw( $validated );
+		return esc_url_raw( $validated_url );
 	}
 
 	/* ================================================================
