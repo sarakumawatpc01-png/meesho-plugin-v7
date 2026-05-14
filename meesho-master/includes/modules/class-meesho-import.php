@@ -873,7 +873,7 @@ class Meesho_Master_Import {
 	}
 
 	private function is_heading_line( $line ) {
-		return (bool) preg_match( '/^[A-Za-z0-9][A-Za-z0-9\s\/\-\&\(\)]{0,60}:\s*$/', (string) $line );
+		return (bool) preg_match( '/^[A-Za-z0-9][A-Za-z0-9\s\/\-&()]{0,60}:\s*$/', (string) $line );
 	}
 
 	private function normalize_heading_text( $line ) {
@@ -1148,11 +1148,15 @@ class Meesho_Master_Import {
 		if ( '' === $src ) {
 			return '';
 		}
-		$validated_url = wp_http_validate_url( $src );
+		$sanitized_url = esc_url_raw( $src );
+		if ( '' === $sanitized_url ) {
+			return '';
+		}
+		$validated_url = wp_http_validate_url( $sanitized_url );
 		if ( ! $validated_url ) {
 			return '';
 		}
-		return esc_url_raw( $validated_url );
+		return $validated_url;
 	}
 
 	/* ================================================================
