@@ -13,6 +13,9 @@ class Meesho_Master_Import {
 	private const UNORDERED_LIST_PREFIX_PATTERN = '[-*•]\\s+';
 	private const DEFAULT_IMAGE_ALT = 'Product image';
 	private const IMAGE_FALLBACK_ATTRS = array( 'data-src', 'data-original', 'data-lazy-src' );
+	private const IMAGE_EXTENSIONS = array( 'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif' );
+	private const DESCRIPTION_STRIP_TAGS = array( 'script', 'style', 'noscript', 'iframe', 'object', 'embed', 'form', 'input', 'button', 'link', 'meta', 'svg', 'canvas', 'video', 'audio' );
+	private const DESCRIPTION_BLOCK_TAGS = array( 'p', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote' );
 
 	private $settings;
 	private $undo;
@@ -897,7 +900,7 @@ class Meesho_Master_Import {
 			return '';
 		}
 		$ext = strtolower( pathinfo( $path, PATHINFO_EXTENSION ) );
-		if ( ! in_array( $ext, array( 'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif' ), true ) ) {
+		if ( ! in_array( $ext, self::IMAGE_EXTENSIONS, true ) ) {
 			return '';
 		}
 		return $url;
@@ -997,8 +1000,7 @@ class Meesho_Master_Import {
 	}
 
 	private function strip_unwanted_description_nodes( DOMDocument $doc ) {
-		$remove_tags = array( 'script', 'style', 'noscript', 'iframe', 'object', 'embed', 'form', 'input', 'button', 'link', 'meta', 'svg', 'canvas', 'video', 'audio' );
-		foreach ( $remove_tags as $tag ) {
+		foreach ( self::DESCRIPTION_STRIP_TAGS as $tag ) {
 			$nodes = $doc->getElementsByTagName( $tag );
 			for ( $i = $nodes->length - 1; $i >= 0; $i-- ) {
 				$node = $nodes->item( $i );
@@ -1010,8 +1012,6 @@ class Meesho_Master_Import {
 	}
 
 	private function normalize_description_blocks( DOMDocument $doc ) {
-		$block_tags = array( 'p', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote' );
-
 		$divs = $doc->getElementsByTagName( 'div' );
 		for ( $i = $divs->length - 1; $i >= 0; $i-- ) {
 			$div = $divs->item( $i );
@@ -1020,7 +1020,7 @@ class Meesho_Master_Import {
 			}
 			$has_block_child = false;
 			foreach ( $div->childNodes as $child ) {
-				if ( XML_ELEMENT_NODE === $child->nodeType && in_array( strtolower( $child->nodeName ), $block_tags, true ) ) {
+				if ( XML_ELEMENT_NODE === $child->nodeType && in_array( strtolower( $child->nodeName ), self::DESCRIPTION_BLOCK_TAGS, true ) ) {
 					$has_block_child = true;
 					break;
 				}
