@@ -887,10 +887,19 @@ class Meesho_Master_Import {
 
 	private function extract_image_url( $line ) {
 		$line = trim( (string) $line );
-		if ( preg_match( '#^https?://\S+\.(?:png|jpe?g|gif|webp|avif)(?:\?\S+)?$#i', $line ) ) {
-			return $this->sanitize_image_src( $line );
+		$url = $this->sanitize_image_src( $line );
+		if ( '' === $url ) {
+			return '';
 		}
-		return '';
+		$path = wp_parse_url( $url, PHP_URL_PATH );
+		if ( empty( $path ) ) {
+			return '';
+		}
+		$ext = strtolower( pathinfo( $path, PATHINFO_EXTENSION ) );
+		if ( ! in_array( $ext, array( 'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif' ), true ) ) {
+			return '';
+		}
+		return $url;
 	}
 
 	private function all_key_value_lines( array $lines ) {
@@ -1092,6 +1101,17 @@ class Meesho_Master_Import {
 						}
 					}
 				}
+				foreach ( array( 'data-src', 'data-original', 'data-lazy-src' ) as $fallback ) {
+					if ( $node->hasAttribute( $fallback ) ) {
+						$node->removeAttribute( $fallback );
+					}
+				}
+				if ( '' === trim( $node->getAttribute( 'src' ) ) ) {
+					if ( $node->parentNode ) {
+						$node->parentNode->removeChild( $node );
+					}
+					continue;
+				}
 				if ( '' === trim( $node->getAttribute( 'alt' ) ) ) {
 					$node->setAttribute( 'alt', self::DEFAULT_IMAGE_ALT );
 				}
@@ -1122,11 +1142,6 @@ class Meesho_Master_Import {
 				}
 				if ( ! empty( $add_rel ) ) {
 					$node->setAttribute( 'rel', trim( $rel . ' ' . implode( ' ', $add_rel ) ) );
-				}
-			}
-			if ( 'img' === $tag && '' === trim( $node->getAttribute( 'src' ) ) ) {
-				if ( $node->parentNode ) {
-					$node->parentNode->removeChild( $node );
 				}
 			}
 		}
