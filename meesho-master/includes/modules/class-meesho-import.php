@@ -888,7 +888,7 @@ class Meesho_Master_Import {
 	private function extract_image_url( $line ) {
 		$line = trim( (string) $line );
 		if ( preg_match( '#^https?://\S+\.(?:png|jpe?g|gif|webp|avif)(?:\?\S+)?$#i', $line ) ) {
-			return $line;
+			return $this->sanitize_image_src( $line );
 		}
 		return '';
 	}
@@ -1075,7 +1075,14 @@ class Meesho_Master_Import {
 			$allowed_attrs = isset( $allowed[ $tag ] ) ? array_keys( $allowed[ $tag ] ) : array();
 			if ( 'img' === $tag ) {
 				$src = trim( $node->getAttribute( 'src' ) );
-				if ( '' === $src ) {
+				if ( '' !== $src ) {
+					$sanitized_src = $this->sanitize_image_src( $src );
+					if ( '' === $sanitized_src ) {
+						$node->removeAttribute( 'src' );
+					} else {
+						$node->setAttribute( 'src', $sanitized_src );
+					}
+				} else {
 					foreach ( array( 'data-src', 'data-original', 'data-lazy-src' ) as $fallback ) {
 						$fallback_value = trim( $node->getAttribute( $fallback ) );
 						$fallback_value = $this->sanitize_image_src( $fallback_value );
@@ -1100,7 +1107,11 @@ class Meesho_Master_Import {
 					}
 				}
 			}
-			if ( 'a' === $tag && $node->hasAttribute( 'target' ) && '_blank' === strtolower( $node->getAttribute( 'target' ) ) ) {
+			$target = '';
+			if ( $node->hasAttribute( 'target' ) ) {
+				$target = strtolower( $node->getAttribute( 'target' ) );
+			}
+			if ( 'a' === $tag && '_blank' === $target ) {
 				$rel = trim( $node->getAttribute( 'rel' ) );
 				$add_rel = array();
 				if ( ! preg_match( '/\\bnoopener\\b/i', $rel ) ) {
