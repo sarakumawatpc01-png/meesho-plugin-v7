@@ -916,7 +916,7 @@ class Meesho_Master_Import {
 		$ordered = true;
 		$unordered = true;
 		foreach ( $lines as $line ) {
-			if ( preg_match( '/^' . self::ORDERED_LIST_PREFIX_PATTERN . '/', (string) $line ) ) {
+			if ( preg_match( '/^' . self::ORDERED_LIST_PREFIX_PATTERN . '/u', (string) $line ) ) {
 				$unordered = false;
 			} elseif ( preg_match( '/^' . self::UNORDERED_LIST_PREFIX_PATTERN . '/u', (string) $line ) ) {
 				$ordered = false;
@@ -934,7 +934,7 @@ class Meesho_Master_Import {
 	}
 
 	private function strip_list_prefix( $line ) {
-		if ( preg_match( '/^' . self::ORDERED_LIST_PREFIX_PATTERN . '(.+)$/', (string) $line, $match ) ) {
+		if ( preg_match( '/^' . self::ORDERED_LIST_PREFIX_PATTERN . '(.+)$/u', (string) $line, $match ) ) {
 			return $match[1];
 		}
 		if ( preg_match( '/^' . self::UNORDERED_LIST_PREFIX_PATTERN . '(.+)$/u', (string) $line, $match ) ) {
@@ -1102,8 +1102,15 @@ class Meesho_Master_Import {
 			}
 			if ( 'a' === $tag && $node->hasAttribute( 'target' ) && '_blank' === strtolower( $node->getAttribute( 'target' ) ) ) {
 				$rel = trim( $node->getAttribute( 'rel' ) );
+				$add_rel = array();
 				if ( ! preg_match( '/\\bnoopener\\b/i', $rel ) ) {
-					$node->setAttribute( 'rel', trim( $rel . ' noopener noreferrer' ) );
+					$add_rel[] = 'noopener';
+				}
+				if ( ! preg_match( '/\\bnoreferrer\\b/i', $rel ) ) {
+					$add_rel[] = 'noreferrer';
+				}
+				if ( ! empty( $add_rel ) ) {
+					$node->setAttribute( 'rel', trim( $rel . ' ' . implode( ' ', $add_rel ) ) );
 				}
 			}
 			if ( 'img' === $tag && '' === trim( $node->getAttribute( 'src' ) ) ) {
