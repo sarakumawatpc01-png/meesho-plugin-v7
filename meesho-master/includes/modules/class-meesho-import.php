@@ -660,13 +660,15 @@ class Meesho_Master_Import {
 
 		$images = $this->sanitize_image_list( $images );
 		if ( empty( $images ) ) {
-			return;
+			return array();
 		}
 
+		$attached = array();
 		$gallery_ids = array();
 		foreach ( $images as $i => $url ) {
 			$attach_id = media_sideload_image( $url, $parent_id, '', 'id' );
 			if ( ! is_wp_error( $attach_id ) ) {
+				$attached[] = $attach_id;
 				if ( $i === 0 ) {
 					set_post_thumbnail( $parent_id, $attach_id );
 				} else {
@@ -678,6 +680,8 @@ class Meesho_Master_Import {
 		if ( ! empty( $gallery_ids ) ) {
 			update_post_meta( $parent_id, '_product_image_gallery', implode( ',', $gallery_ids ) );
 		}
+
+		return $attached;
 	}
 
 	/* ================================================================
