@@ -299,6 +299,10 @@ class Meesho_Master_Import {
 			$raw_images[] = $data['image_url'];
 		}
 		$data['images'] = $this->sanitize_image_list( $raw_images );
+		$fallback_image = $this->sanitize_image_src( $data['image_url'] );
+		if ( empty( $data['images'] ) && '' !== $fallback_image ) {
+			$data['images'] = array( $fallback_image );
+		}
 		$data['image_url'] = $data['images'][0] ?? '';
 
 		// Extract JSON-LD structured data (Meesho often embeds this)
@@ -1181,6 +1185,7 @@ class Meesho_Master_Import {
 
 	private function sanitize_image_list( $images ) {
 		$clean = array();
+		// Use an associative set for O(1) de-duplication on larger image lists.
 		$seen = array();
 		foreach ( (array) $images as $image ) {
 			if ( ! is_string( $image ) ) {
