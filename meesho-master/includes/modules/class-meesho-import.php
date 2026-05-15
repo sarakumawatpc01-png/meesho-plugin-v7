@@ -294,6 +294,8 @@ class Meesho_Master_Import {
 				}
 			}
 		}
+		$data['images'] = $this->sanitize_image_list( $data['images'] );
+		$data['image_url'] = $data['images'][0] ?? $this->sanitize_image_src( $data['image_url'] );
 
 		// Extract JSON-LD structured data (Meesho often embeds this)
 		$scripts = $xpath->query( '//script[@type="application/ld+json"]' );
@@ -652,6 +654,11 @@ class Meesho_Master_Import {
 			require_once ABSPATH . 'wp-admin/includes/image.php';
 		}
 
+		$images = $this->sanitize_image_list( $images );
+		if ( empty( $images ) ) {
+			return;
+		}
+
 		$gallery_ids = array();
 		foreach ( $images as $i => $url ) {
 			$attach_id = media_sideload_image( $url, $parent_id, '', 'id' );
@@ -699,6 +706,7 @@ class Meesho_Master_Import {
 					$media_urls[] = $m['url'];
 				}
 			}
+			$media_urls = $this->sanitize_image_list( $media_urls );
 
 			$wpdb->insert(
 				$table,
@@ -747,6 +755,7 @@ class Meesho_Master_Import {
 		$html = preg_replace( '/<script[^>]*>.*?<\/script>/is', '', $html );
 		$html = preg_replace( '/<style[^>]*>.*?<\/style>/is', '', $html );
 		$html = preg_replace( '/<noscript[^>]*>.*?<\/noscript>/is', '', $html );
+		$html = preg_replace( '/<!--.*?-->/s', '', $html );
 
 		$html = $this->format_description_plain_text( $html );
 
@@ -1159,6 +1168,21 @@ class Meesho_Master_Import {
 		return $validated_url;
 	}
 
+	private function sanitize_image_list( $images ) {
+		$clean = array();
+		foreach ( (array) $images as $image ) {
+			if ( ! is_string( $image ) ) {
+				continue;
+			}
+			$url = $this->sanitize_image_src( $image );
+			if ( '' === $url || in_array( $url, $clean, true ) ) {
+				continue;
+			}
+			$clean[] = $url;
+		}
+		return $clean;
+	}
+
 	/* ================================================================
 	 *  v6.2 — Staging workflow
 	 * ================================================================ */
@@ -1405,6 +1429,9 @@ class Meesho_Master_Import {
 			if ( array_key_exists( $k, $fields ) ) {
 				$data[ $k ] = $fields[ $k ];
 			}
+		}
+		if ( array_key_exists( 'images', $data ) ) {
+			$data['images'] = $this->sanitize_image_list( $data['images'] );
 		}
 		$wpdb->update(
 			$table,
