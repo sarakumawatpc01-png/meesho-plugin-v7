@@ -2,55 +2,71 @@
 
 Priority order: audit → import fixes → blog rebuild → orders → SEO agent → analytics → copilot → logging → settings → performance/security → docs/testing.
 
-- [x] Phase 1 Audit & reports
-  - [x] Inventory hooks/assets/db/cron/APIs (reports/phase-1-architecture.md)
-  - [x] Map admin/public separation (reports/phase-1-architecture.md)
-  - [x] Review sanitization/nonce/cap checks (reports/phase-1-security.md)
-  - [x] Flag performance bottlenecks (reports/phase-1-performance.md)
-  - [x] UI/UX gaps report (reports/phase-1-ui-ux.md)
-  - [x] Architecture/missing features/security/performance/UI reports (reports/*.md)
+Status summary:
+- No phase is fully complete.
+- Partial implementations exist for Phases 2–9 (import/blogs/orders/SEO/analytics/copilot/logging/settings modules and UI).
+- Phases 1, 10, and 11 are largely missing; drafts may exist but need completion/validation.
+
+- [ ] Phase 1 Audit & reports
+  - Status: drafts may exist under reports/; complete and validate.
+  - [ ] Inventory hooks/assets/db/cron/APIs (reports/phase-1-architecture.md)
+  - [ ] Map admin/public separation (reports/phase-1-architecture.md)
+  - [ ] Review sanitization/nonce/cap checks (reports/phase-1-security.md)
+  - [ ] Flag performance bottlenecks (reports/phase-1-performance.md)
+  - [ ] UI/UX gaps report (reports/phase-1-ui-ux.md)
+  - [ ] Consolidate architecture/missing features/security/performance/UI reports (reports/*.md)
 - [ ] Phase 2 Product import fixes
-  - [x] Strengthen description cleanup pipeline (DOM cleanup + allowlist review)
+  - Status: partial implementation exists; validate and complete.
+  - [ ] Strengthen description cleanup pipeline (DOM cleanup + allowlist review)
   - [ ] Formatter for headings/lists/tables/images
-  - [ ] Eliminate layout‑breaking styles/scripts/wrappers
+  - [ ] Eliminate layout-breaking styles/scripts/wrappers
   - [ ] Scope any frontend CSS used by imports
   - [ ] Import queue/progress/retry/logs
   - [ ] Duplicate/SKU handling + category/tag mapping
-  - [x] Image optimization + validation
+  - [ ] Image optimization + validation
 - [ ] Phase 3 Blog system rebuild
+  - Status: partial implementation exists; validate and complete.
   - [ ] UI fields: slug/status/category/tags/featured image/preview/publish/draft
   - [ ] Live streaming generation UX with progress states
   - [ ] Quality rules (SEO/GEO/AIO)
   - [ ] Publishing controls (schedule/revisions/excerpts/schema)
 - [ ] Phase 4 Orders
+  - Status: partial implementation exists; validate and complete.
   - [ ] Backfill mm_orders from WooCommerce orders
   - [ ] Meesho SKU → URL mapping + quick actions
   - [ ] Sync/search/filters/exports/bulk actions
   - [ ] Failure logs
 - [ ] Phase 5 SEO AI agent
+  - Status: partial implementation exists; validate and complete.
   - [ ] Reconcile table/schema mismatches
   - [ ] Harden scoring + suggestion storage
   - [ ] Autonomous optimization flows with approval/rollback
   - [ ] Internal linking engine modes
   - [ ] Monitoring dashboard (history/rollbacks/metrics)
 - [ ] Phase 6 Analytics
+  - Status: partial implementation exists; validate and complete.
   - [ ] Repair data sources and table usage
   - [ ] GA4/GSC/Woo/RankMath integrations
   - [ ] Dashboards/widgets with real-time refresh
 - [ ] Phase 7 Copilot workflow
+  - Status: partial implementation exists; validate and complete.
   - [ ] Enforce approval gates
   - [ ] Auto-mode logging/rollback
   - [ ] Action queue state tracking
 - [ ] Phase 8 Logging
+  - Status: partial implementation exists; validate and complete.
   - [ ] Centralize logs across imports/blogs/SEO/orders/settings/APIs/errors
   - [ ] Filters/search/severity/export/retention controls
 - [ ] Phase 9 Settings
+  - Status: partial implementation exists; validate and complete.
   - [ ] Audit missing toggles/validation/saves/status checks
   - [ ] Add settings for streaming/SEO/internal linking/retries/log retention/analytics/cron/cache
 - [ ] Phase 10 Performance & Security
+  - Status: largely missing; plan and implement.
   - [ ] Optimize queries/background jobs/admin rendering
   - [ ] Add nonce/cap checks and sanitize/escape paths where missing
   - [ ] Verify no XSS/CSRF/SQLi regressions
 - [ ] Phase 11 Docs & testing
+  - Status: largely missing; plan and implement.
   - [ ] User/dev/setup/troubleshooting docs
   - [ ] Run Woo/theme/mobile/security/AI/SEO workflows
