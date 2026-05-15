@@ -295,14 +295,15 @@ class Meesho_Master_Import {
 			}
 		}
 		$raw_images = is_array( $data['images'] ?? null ) ? $data['images'] : array();
-		if ( ! empty( $data['image_url'] ) ) {
-			$raw_images[] = $data['image_url'];
-		}
-		$data['images'] = $this->sanitize_image_list( $raw_images );
 		$fallback_image = $this->sanitize_image_src( $data['image_url'] );
-		if ( empty( $data['images'] ) && '' !== $fallback_image ) {
-			$data['images'] = array( $fallback_image );
+		$sanitized_images = $this->sanitize_image_list( $raw_images );
+		if ( '' !== $fallback_image && ! in_array( $fallback_image, $sanitized_images, true ) ) {
+			array_unshift( $sanitized_images, $fallback_image );
 		}
+		if ( empty( $sanitized_images ) && '' !== $fallback_image ) {
+			$sanitized_images = array( $fallback_image );
+		}
+		$data['images'] = $sanitized_images;
 		$data['image_url'] = $data['images'][0] ?? '';
 
 		// Extract JSON-LD structured data (Meesho often embeds this)
@@ -1185,7 +1186,7 @@ class Meesho_Master_Import {
 
 	private function sanitize_image_list( $images ) {
 		$clean = array();
-		// Use an associative set for O(1) de-duplication on larger image lists.
+		// Use an associative set for O(1) lookup during de-duplication on larger image lists.
 		$seen = array();
 		foreach ( (array) $images as $image ) {
 			if ( ! is_string( $image ) ) {
