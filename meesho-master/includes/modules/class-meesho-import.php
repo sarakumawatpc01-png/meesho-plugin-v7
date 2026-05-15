@@ -299,7 +299,7 @@ class Meesho_Master_Import {
 			$raw_images[] = $data['image_url'];
 		}
 		$data['images'] = $this->sanitize_image_list( $raw_images );
-		$data['image_url'] = $data['images'][0] ?? '';
+		$data['image_url'] = $data['images'][0] ?? null;
 
 		// Extract JSON-LD structured data (Meesho often embeds this)
 		$scripts = $xpath->query( '//script[@type="application/ld+json"]' );
@@ -1160,6 +1160,7 @@ class Meesho_Master_Import {
 		}
 	}
 
+	// Validate image URLs (format + allowed protocols) and normalize to a safe URL string.
 	private function sanitize_image_src( $src ) {
 		$src = trim( (string) $src );
 		if ( '' === $src ) {
