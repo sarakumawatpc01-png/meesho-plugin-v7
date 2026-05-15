@@ -294,8 +294,12 @@ class Meesho_Master_Import {
 				}
 			}
 		}
-		$data['images'] = $this->sanitize_image_list( $data['images'] );
-		$data['image_url'] = $data['images'][0] ?? $this->sanitize_image_src( $data['image_url'] );
+		$raw_images = $data['images'];
+		if ( ! empty( $data['image_url'] ) ) {
+			$raw_images[] = $data['image_url'];
+		}
+		$data['images'] = $this->sanitize_image_list( $raw_images );
+		$data['image_url'] = $data['images'][0] ?? '';
 
 		// Extract JSON-LD structured data (Meesho often embeds this)
 		$scripts = $xpath->query( '//script[@type="application/ld+json"]' );
@@ -1170,14 +1174,16 @@ class Meesho_Master_Import {
 
 	private function sanitize_image_list( $images ) {
 		$clean = array();
+		$seen = array();
 		foreach ( (array) $images as $image ) {
 			if ( ! is_string( $image ) ) {
 				continue;
 			}
 			$url = $this->sanitize_image_src( $image );
-			if ( '' === $url || in_array( $url, $clean, true ) ) {
+			if ( '' === $url || isset( $seen[ $url ] ) ) {
 				continue;
 			}
+			$seen[ $url ] = true;
 			$clean[] = $url;
 		}
 		return $clean;
