@@ -1,0 +1,56 @@
+# Meesho Master v7 — Phase Checklist
+
+Priority order: audit → import fixes → blog rebuild → orders → SEO agent → analytics → copilot → logging → settings → performance/security → docs/testing.
+
+- [x] Phase 1 Audit & reports
+  - [x] Inventory hooks/assets/db/cron/APIs (reports/phase-1-architecture.md)
+  - [x] Map admin/public separation (reports/phase-1-architecture.md)
+  - [x] Review sanitization/nonce/cap checks (reports/phase-1-security.md)
+  - [x] Flag performance bottlenecks (reports/phase-1-performance.md)
+  - [x] UI/UX gaps report (reports/phase-1-ui-ux.md)
+  - [x] Architecture/missing features/security/performance/UI reports (reports/*.md)
+- [ ] Phase 2 Product import fixes
+  - [ ] Strengthen description cleanup pipeline (DOM cleanup + whitelist review)
+  - [ ] Formatter for headings/lists/tables/images
+  - [ ] Eliminate layout‑breaking styles/scripts/wrappers
+  - [ ] Scope any frontend CSS used by imports
+  - [ ] Import queue/progress/retry/logs
+  - [ ] Duplicate/SKU handling + category/tag mapping
+  - [ ] Image optimization + validation
+- [ ] Phase 3 Blog system rebuild
+  - [ ] UI fields: slug/status/category/tags/featured image/preview/publish/draft
+  - [ ] Live streaming generation UX with progress states
+  - [ ] Quality rules (SEO/GEO/AIO)
+  - [ ] Publishing controls (schedule/revisions/excerpts/schema)
+- [ ] Phase 4 Orders
+  - [ ] Backfill mm_orders from WooCommerce orders
+  - [ ] Meesho SKU → URL mapping + quick actions
+  - [ ] Sync/search/filters/exports/bulk actions
+  - [ ] Failure logs
+- [ ] Phase 5 SEO AI agent
+  - [ ] Reconcile table/schema mismatches
+  - [ ] Harden scoring + suggestion storage
+  - [ ] Autonomous optimization flows with approval/rollback
+  - [ ] Internal linking engine modes
+  - [ ] Monitoring dashboard (history/rollbacks/metrics)
+- [ ] Phase 6 Analytics
+  - [ ] Repair data sources and table usage
+  - [ ] GA4/GSC/Woo/RankMath integrations
+  - [ ] Dashboards/widgets with real-time refresh
+- [ ] Phase 7 Copilot workflow
+  - [ ] Enforce approval gates
+  - [ ] Auto-mode logging/rollback
+  - [ ] Action queue state tracking
+- [ ] Phase 8 Logging
+  - [ ] Centralize logs across imports/blogs/SEO/orders/settings/APIs/errors
+  - [ ] Filters/search/severity/export/retention controls
+- [ ] Phase 9 Settings
+  - [ ] Audit missing toggles/validation/saves/status checks
+  - [ ] Add settings for streaming/SEO/internal linking/retries/log retention/analytics/cron/cache
+- [ ] Phase 10 Performance & Security
+  - [ ] Optimize queries/background jobs/admin rendering
+  - [ ] Add nonce/cap checks and sanitize/escape paths where missing
+  - [ ] Verify no XSS/CSRF/SQLi regressions
+- [ ] Phase 11 Docs & testing
+  - [ ] User/dev/setup/troubleshooting docs
+  - [ ] Run Woo/theme/mobile/security/AI/SEO workflows
