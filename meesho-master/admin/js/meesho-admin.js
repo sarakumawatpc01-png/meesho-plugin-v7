@@ -115,6 +115,45 @@
 		if (tab === 'analytics') MM.loadRankings && MM.loadRankings();
 	};
 
+	MM.taxonomies = { loaded: false, loading: null, categories: [], tags: [] };
+
+	const renderTermOptions = (terms, selected) => {
+		const selectedSet = new Set((selected || []).map((id) => String(id)));
+		if (!Array.isArray(terms) || !terms.length) {
+			return '<option value="">No terms found</option>';
+		}
+		return terms.map((t) => {
+			const isSelected = selectedSet.has(String(t.id));
+			return `<option value="${escapeHtml(t.id)}" ${isSelected ? 'selected' : ''}>${escapeHtml(t.name)}</option>`;
+		}).join('');
+	};
+
+	const readMultiSelectValues = (el) => {
+		if (!el) return [];
+		return Array.from(el.selectedOptions || []).map((o) => parseInt(o.value, 10)).filter((v) => v);
+	};
+
+	MM.loadTaxonomies = function () {
+		if (MM.taxonomies.loaded) {
+			return Promise.resolve(MM.taxonomies);
+		}
+		if (MM.taxonomies.loading) {
+			return MM.taxonomies.loading;
+		}
+		MM.taxonomies.loading = ajaxPost('mm_get_wc_taxonomies').then((res) => {
+			if (res && res.success && res.data) {
+				MM.taxonomies.categories = res.data.categories || [];
+				MM.taxonomies.tags = res.data.tags || [];
+				MM.taxonomies.loaded = true;
+			} else {
+				MM.taxonomies.categories = [];
+				MM.taxonomies.tags = [];
+			}
+			return MM.taxonomies;
+		});
+		return MM.taxonomies.loading;
+	};
+
 	/* ============================================================
 	 * Import tab — staging workflow
 	 * ============================================================ */
@@ -361,12 +400,14 @@
 		if (!panel || !content) return;
 		panel.classList.remove('mm-hidden');
 		content.innerHTML = '<p class="mm-text-muted" style="grid-column:span 2;">Loading…</p>';
-		ajaxPost('mm_get_staged', { id: safeId }).then((res) => {
+		Promise.all([ajaxPost('mm_get_staged', { id: safeId }), MM.loadTaxonomies()]).then(([res]) => {
 			if (!res.success) { content.innerHTML = '<p>Load failed.</p>'; return; }
 			MM.products.current = res.data;
 			const d = res.data.data || {};
 			const reviews = (d.reviews || []).slice(0, 20);
 			const variationRows = normalizeVariationRows(d.sizes || [], res.data.sku || '');
+			const categoryOptions = renderTermOptions(MM.taxonomies.categories, d.wc_categories || []);
+			const tagOptions = renderTermOptions(MM.taxonomies.tags, d.wc_tags || []);
 			const reviewsHtml = reviews.length ? reviews.map((r) => `
 				<div class="mm-edit-review" data-mm-review-row="${safeId}">
 					<div class="mm-edit-review-header">
@@ -416,6 +457,13 @@
 							<input type="number" step="0.01" class="mm-input" id="mm_field_op_${safeId}" value="${escapeHtml(d.override_price || '')}" placeholder="Calculated: ₹${escapeHtml(res.data.our_price || d.price || 0)} — leave blank to use markup rules">
 							<input type="number" step="0.01" class="mm-input" id="mm_field_om_${safeId}" value="${escapeHtml(d.override_mrp || '')}" placeholder="Override MRP">
 						</div>
+					</div>
+					<div class="mm-card" style="background:#f8fafc;padding:10px;margin-top:10px;">
+						<label class="mm-label">🏷 WooCommerce Categories</label>
+						<select multiple id="mm_field_categories_${safeId}" class="mm-input mm-select" size="5">${categoryOptions}</select>
+						<label class="mm-label mm-mt-10">🏷 WooCommerce Tags</label>
+						<select multiple id="mm_field_tags_${safeId}" class="mm-input mm-select" size="5">${tagOptions}</select>
+						<div class="mm-text-muted" style="font-size:11px;margin-top:6px;">Hold Ctrl/Cmd to select multiple.</div>
 					</div>
 					<label class="mm-label mm-mt-10">Description (HTML — same for all variations)</label>
 					<textarea class="mm-textarea" id="mm_field_desc_${safeId}" rows="6">${escapeHtml(d.description || '')}</textarea>
@@ -505,6 +553,8 @@
 			override_price: parseFloat(($(`#mm_field_op_${id}`) || {}).value) || 0,
 			override_mrp: parseFloat(($(`#mm_field_om_${id}`) || {}).value) || 0,
 			all_out_of_stock: !!(($(`#mm_field_all_oos_${id}`) || {}).checked),
+			wc_categories: readMultiSelectValues($(`#mm_field_categories_${id}`)),
+			wc_tags: readMultiSelectValues($(`#mm_field_tags_${id}`)),
 		};
 		const status = $(`#mm_panel_status_${id}`);
 		if (status) status.textContent = '⏳ Saving…';
