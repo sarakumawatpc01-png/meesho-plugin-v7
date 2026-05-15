@@ -663,12 +663,12 @@ class Meesho_Master_Import {
 			return array();
 		}
 
-		$attached = array();
+		$attachment_ids = array();
 		$gallery_ids = array();
 		foreach ( $images as $i => $url ) {
 			$attach_id = media_sideload_image( $url, $parent_id, '', 'id' );
 			if ( ! is_wp_error( $attach_id ) ) {
-				$attached[] = $attach_id;
+				$attachment_ids[] = $attach_id;
 				if ( $i === 0 ) {
 					set_post_thumbnail( $parent_id, $attach_id );
 				} else {
@@ -681,7 +681,7 @@ class Meesho_Master_Import {
 			update_post_meta( $parent_id, '_product_image_gallery', implode( ',', $gallery_ids ) );
 		}
 
-		return $attached;
+		return $attachment_ids;
 	}
 
 	/* ================================================================
@@ -1160,7 +1160,9 @@ class Meesho_Master_Import {
 		}
 	}
 
-	// Validate image URLs (format + allowed protocols) and normalize to a safe URL string.
+	/**
+	 * Validate image URLs (format + allowed protocols) and normalize to a safe URL string.
+	 */
 	private function sanitize_image_src( $src ) {
 		$src = trim( (string) $src );
 		if ( '' === $src ) {

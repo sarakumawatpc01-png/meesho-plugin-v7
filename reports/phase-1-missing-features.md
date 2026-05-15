@@ -3,7 +3,7 @@
 ## Phase 2: Product import fixes
 - Import queue/progress/retry/logging are not implemented.
 - Category/tag mapping and image optimization/validation are missing.
-- Description cleanup is present but needs final whitelist/formatter review.
+- Description cleanup is present but needs final allowlist/formatter review.
 
 ## Phase 3: Blog system rebuild
 - Missing slug/status/tags/featured image controls.
