@@ -294,7 +294,7 @@ class Meesho_Master_Import {
 				}
 			}
 		}
-		$raw_images = $data['images'];
+		$raw_images = is_array( $data['images'] ?? null ) ? $data['images'] : array();
 		if ( ! empty( $data['image_url'] ) ) {
 			$raw_images[] = $data['image_url'];
 		}
