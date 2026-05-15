@@ -10,7 +10,7 @@ Priority order: audit → import fixes → blog rebuild → orders → SEO agent
   - [x] UI/UX gaps report (reports/phase-1-ui-ux.md)
   - [x] Architecture/missing features/security/performance/UI reports (reports/*.md)
 - [ ] Phase 2 Product import fixes
-  - [x] Strengthen description cleanup pipeline (DOM cleanup + whitelist review)
+  - [x] Strengthen description cleanup pipeline (DOM cleanup + allowlist review)
   - [ ] Formatter for headings/lists/tables/images
   - [ ] Eliminate layout‑breaking styles/scripts/wrappers
   - [ ] Scope any frontend CSS used by imports
