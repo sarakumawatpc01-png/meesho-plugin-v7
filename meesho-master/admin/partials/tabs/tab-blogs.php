@@ -65,8 +65,41 @@ $blog_model  = $settings->get( 'mm_openrouter_model_blog' );
 			) );
 			?>
 		</div>
+		<div class="mm-grid mm-grid-2">
+			<div class="mm-form-row">
+				<label class="mm-label">Slug</label>
+				<input type="text" id="mm_blog_slug" class="mm-input" placeholder="auto-from-title-if-empty">
+			</div>
+			<div class="mm-form-row">
+				<label class="mm-label">Status</label>
+				<select id="mm_blog_status_select" class="mm-select">
+					<option value="draft" selected>Draft</option>
+					<option value="pending">Pending Review</option>
+					<option value="publish">Publish Now</option>
+					<option value="future">Schedule</option>
+				</select>
+			</div>
+		</div>
+		<div class="mm-form-row">
+			<label class="mm-label">Tags (comma-separated)</label>
+			<input type="text" id="mm_blog_tags" class="mm-input" placeholder="fashion, festive wear, styling tips">
+		</div>
+		<div class="mm-grid mm-grid-2">
+			<div class="mm-form-row">
+				<label class="mm-label">Featured image URL (optional)</label>
+				<input type="url" id="mm_blog_featured_image" class="mm-input" placeholder="https://example.com/image.jpg">
+			</div>
+			<div class="mm-form-row" id="mm_blog_schedule_wrap" style="display:none;">
+				<label class="mm-label">Publish schedule</label>
+				<input type="datetime-local" id="mm_blog_schedule_at" class="mm-input">
+			</div>
+		</div>
+		<div class="mm-form-row">
+			<label class="mm-label">Excerpt (optional)</label>
+			<textarea id="mm_blog_excerpt" class="mm-textarea" rows="2" placeholder="Short excerpt for post summary cards."></textarea>
+		</div>
 		<button class="mm-btn mm-btn-primary" id="mm_blog_generate_btn">✨ Generate Draft</button>
-		<button class="mm-btn mm-btn-outline" id="mm_blog_save_btn" style="display:none;">💾 Save as Draft</button>
+		<button class="mm-btn mm-btn-outline" id="mm_blog_save_btn" style="display:none;">💾 Save Post</button>
 		<div id="mm_blog_status" class="mm-text-muted mm-mt-10" style="font-size:13px;"></div>
 	</div>
 

@@ -16,18 +16,18 @@ Status summary:
   - [x] UI/UX gaps report (reports/phase-1-ui-ux.md)
   - [x] Consolidate architecture/missing features/security/performance/UI reports (reports/phase-1-summary.md)
 - [ ] Phase 2 Product import fixes
-  - Status: partial implementation exists; validate and complete.
-  - [ ] Strengthen description cleanup pipeline (DOM cleanup + allowlist review)
-  - [ ] Formatter for headings/lists/tables/images
-  - [ ] Eliminate layout-breaking styles/scripts/wrappers
+  - Status: in progress; core data cleanup/mapping/validation shipped, queue/retry/logging still pending.
+  - [x] Strengthen description cleanup pipeline (DOM cleanup + allowlist review)
+  - [x] Formatter for headings/lists/tables/images
+  - [x] Eliminate layout-breaking styles/scripts/wrappers
   - [ ] Scope any frontend CSS used by imports
   - [ ] Import queue/progress/retry/logs
-  - [ ] Duplicate/SKU handling + category/tag mapping
-  - [ ] Image optimization + validation
+  - [x] Duplicate/SKU handling + category/tag mapping
+  - [x] Image optimization + validation
 - [ ] Phase 3 Blog system rebuild
-  - Status: partial implementation exists; validate and complete.
-  - [ ] UI fields: slug/status/category/tags/featured image/preview/publish/draft
-  - [ ] Live streaming generation UX with progress states
+  - Status: in progress; editor/save controls expanded, quality/publishing governance still pending.
+  - [x] UI fields: slug/status/category/tags/featured image/preview/publish/draft
+  - [x] Live streaming generation UX with progress states
   - [ ] Quality rules (SEO/GEO/AIO)
   - [ ] Publishing controls (schedule/revisions/excerpts/schema)
 - [ ] Phase 4 Orders

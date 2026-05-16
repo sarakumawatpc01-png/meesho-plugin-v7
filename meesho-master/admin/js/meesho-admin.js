@@ -1683,6 +1683,22 @@
 		const saveBtn     = $('#mm_blog_save_btn');
 		const statusEl    = $('#mm_blog_status');
 		const draftsEl    = $('#mm_blog_drafts');
+		const postStatusEl = $('#mm_blog_status_select');
+		const scheduleWrapEl = $('#mm_blog_schedule_wrap');
+		const scheduleInputEl = $('#mm_blog_schedule_at');
+		const saveBtnDefault = saveBtn ? saveBtn.textContent : '💾 Save as Draft';
+
+		const syncScheduleVisibility = () => {
+			if (!scheduleWrapEl || !postStatusEl) return;
+			scheduleWrapEl.style.display = postStatusEl.value === 'future' ? '' : 'none';
+			if (postStatusEl.value !== 'future' && scheduleInputEl) {
+				scheduleInputEl.value = '';
+			}
+		};
+		syncScheduleVisibility();
+		if (postStatusEl) {
+			postStatusEl.addEventListener('change', syncScheduleVisibility);
+		}
 
 		const loadDrafts = () => {
 			if (!draftsEl) return;
@@ -1729,9 +1745,24 @@
 			if (!topic.trim()) { MM.toast('Enter a topic first.', 'error'); return; }
 			generateBtn.disabled = true;
 			generateBtn.textContent = '⏳ Generating (30–90s)…';
-			if (statusEl) statusEl.textContent = '⏳ Calling AI… please wait.';
+			let statusTimer = null;
+			if (statusEl) {
+				const steps = [
+					'⏳ Calling AI… please wait.',
+					'🧠 Building outline and headings…',
+					'✍️ Drafting content and formatting HTML…',
+					'🔎 Finalizing SEO metadata…',
+				];
+				let idx = 0;
+				statusEl.textContent = steps[idx];
+				statusTimer = setInterval(() => {
+					idx = Math.min(idx + 1, steps.length - 1);
+					statusEl.textContent = steps[idx];
+				}, 3000);
+			}
 			if (saveBtn) saveBtn.style.display = 'none';
 			const res = await ajaxPost('mm_blog_generate', { topic, keyword, length, tone, extra, category: cat });
+			if (statusTimer) clearInterval(statusTimer);
 			generateBtn.disabled = false;
 			generateBtn.textContent = '✨ Generate Draft';
 			if (!res.success) {
@@ -1746,7 +1777,7 @@
 			if (titleEl)   titleEl.value   = res.data.title   || topic;
 			if (contentEl) contentEl.value = res.data.content || '';
 			if (metaEl)    metaEl.value    = res.data.meta_description || '';
-			if (statusEl) statusEl.textContent = `✅ Draft generated using ${escapeHtml(res.data.model || 'AI')}. Edit if needed, then click Save as Draft.`;
+			if (statusEl) statusEl.textContent = `✅ Draft generated using ${escapeHtml(res.data.model || 'AI')}. Edit if needed, then click Save Post.`;
 			if (saveBtn) saveBtn.style.display = '';
 			MM.toast('Blog draft generated! Review and save.', 'success');
 		});
@@ -1756,15 +1787,34 @@
 			const content = ($('#mm_blog_preview_content') || {}).value || '';
 			const meta    = ($('#mm_blog_preview_meta')    || {}).value || '';
 			const cat     = ($('#mm_blog_category')        || {}).value || '';
+			const slug    = ($('#mm_blog_slug')            || {}).value || '';
+			const status  = ($('#mm_blog_status_select')   || {}).value || 'draft';
+			const tags    = ($('#mm_blog_tags')            || {}).value || '';
+			const featuredImage = ($('#mm_blog_featured_image') || {}).value || '';
+			const excerpt = ($('#mm_blog_excerpt')         || {}).value || '';
+			const scheduleAt = ($('#mm_blog_schedule_at')  || {}).value || '';
 			if (!title.trim() || !content.trim()) { MM.toast('Title and content are required.', 'error'); return; }
+			if (status === 'future' && !scheduleAt) { MM.toast('Select a publish schedule date/time.', 'error'); return; }
 			saveBtn.disabled = true;
 			saveBtn.textContent = '⏳ Saving…';
-			const res = await ajaxPost('mm_blog_save', { title, content, meta_description: meta, category: cat });
+			const res = await ajaxPost('mm_blog_save', {
+				title,
+				content,
+				meta_description: meta,
+				category: cat,
+				slug,
+				status,
+				tags,
+				featured_image: featuredImage,
+				excerpt,
+				schedule_at: scheduleAt,
+			});
 			saveBtn.disabled = false;
-			saveBtn.textContent = '💾 Save as Draft';
+			saveBtn.textContent = saveBtnDefault;
 			if (res.success) {
-				MM.toast('✅ Draft saved!', 'success');
-				if (statusEl) statusEl.innerHTML = `✅ Saved as draft. <a href="${escapeHtml(res.data.edit_url || '#')}" target="_blank">Edit in WordPress ↗</a>`;
+				MM.toast('✅ Post saved!', 'success');
+				const statusLabel = escapeHtml((res.data && res.data.post_status) || status);
+				if (statusEl) statusEl.innerHTML = `✅ Saved (${statusLabel}). <a href="${escapeHtml(res.data.edit_url || '#')}" target="_blank">Edit in WordPress ↗</a>`;
 				loadDrafts();
 			} else {
 				const msg = (res.data && res.data.message) ? res.data.message : 'Save failed.';
