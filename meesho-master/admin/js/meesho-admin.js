@@ -2014,7 +2014,10 @@
 		const scheduleInputEl = $('#mm_blog_schedule_at');
 		const qualityEl = $('#mm_blog_quality_report');
 		const saveBtnDefault = saveBtn ? saveBtn.textContent : '💾 Save Post';
+		// 3s keeps feedback lively without flickering while waiting for AI responses.
 		const statusUpdateIntervalMs = 3000;
+		const minBlogWordCountTarget = 600;
+		const minWordCountPenalty = 20;
 		const evaluateBlogQuality = () => {
 			const title = (($('#mm_blog_preview_title') || {}).value || '').trim();
 			const content = (($('#mm_blog_preview_content') || {}).value || '').trim();
@@ -2035,9 +2038,9 @@
 				score -= 10;
 				issues.push('Primary keyword is not present in title.');
 			}
-			if (wordCount < 600) {
-				score -= 20;
-				issues.push('Content is short; target at least ~600 words for stronger SEO/AEO coverage.');
+			if (wordCount < minBlogWordCountTarget) {
+				score -= minWordCountPenalty;
+				issues.push(`Content is short; target at least ~${minBlogWordCountTarget} words for stronger SEO/AEO coverage.`);
 			}
 			if (!/<h2[\s>]/i.test(content)) {
 				score -= 10;
