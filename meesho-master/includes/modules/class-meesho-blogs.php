@@ -56,6 +56,7 @@ class Meesho_Master_Blogs {
 		if ( $attachment_id ) {
 			set_post_thumbnail( $post_id, (int) $attachment_id );
 		}
+		// If the URL is external/not in Media Library, we keep URL meta only and skip thumbnail assignment.
 	}
 
 	/**

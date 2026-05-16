@@ -1687,7 +1687,7 @@
 		const scheduleWrapEl = $('#mm_blog_schedule_wrap');
 		const scheduleInputEl = $('#mm_blog_schedule_at');
 		const saveBtnDefault = saveBtn ? saveBtn.textContent : '💾 Save Post';
-		const generationStepIntervalMs = 3000;
+		const stepIntervalMs = 3000;
 
 		const syncScheduleVisibility = () => {
 			if (!scheduleWrapEl || !postStatusEl) return;
@@ -1759,7 +1759,7 @@
 				statusTimer = setInterval(() => {
 					idx = Math.min(idx + 1, steps.length - 1);
 					statusEl.textContent = steps[idx];
-				}, generationStepIntervalMs);
+				}, stepIntervalMs);
 			}
 			if (saveBtn) saveBtn.style.display = 'none';
 			const res = await ajaxPost('mm_blog_generate', { topic, keyword, length, tone, extra, category: cat });
