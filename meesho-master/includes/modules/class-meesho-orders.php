@@ -188,10 +188,14 @@ wp_send_json_error( array( 'message' => 'Unauthorized' ), 403 );
 }
 global $wpdb;
 $posts = $wpdb->posts;
+$page = max( 1, absint( $_POST['page'] ?? 1 ) );
+$limit = max( 1, min( 500, absint( $_POST['limit'] ?? 200 ) ) );
+$offset = ( $page - 1 ) * $limit;
 $shop_order_types = array( 'shop_order', 'shop_order_placehold' );
 $placeholders = implode( ',', array_fill( 0, count( $shop_order_types ), '%s' ) );
-$query = "SELECT ID FROM {$posts} WHERE post_type IN ({$placeholders}) AND post_status NOT IN ('trash','auto-draft') ORDER BY ID DESC LIMIT 1000";
-$order_ids = $wpdb->get_col( $wpdb->prepare( $query, ...$shop_order_types ) );
+$query = "SELECT ID FROM {$posts} WHERE post_type IN ({$placeholders}) AND post_status NOT IN ('trash','auto-draft') ORDER BY ID DESC LIMIT %d OFFSET %d";
+$query_params = array_merge( $shop_order_types, array( $limit, $offset ) );
+$order_ids = $wpdb->get_col( $wpdb->prepare( $query, ...$query_params ) );
 
 $inserted = 0;
 $failed = array();
@@ -215,6 +219,9 @@ wp_send_json_success(
 array(
 'inserted' => $inserted,
 'scanned'  => count( (array) $order_ids ),
+'page'     => $page,
+'limit'    => $limit,
+'has_more' => count( (array) $order_ids ) === $limit,
 'failed'   => $failed,
 )
 );

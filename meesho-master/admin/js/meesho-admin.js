@@ -254,21 +254,34 @@
 	MM.backfillOrders = function () {
 		if (!confirm('Backfill mm_orders from existing WooCommerce orders now?')) return;
 		MM.toast('Backfilling orders…', 'info');
-		ajaxPost('meesho_backfill_orders').then((res) => {
+		ajaxPost('meesho_backfill_orders', { page: 1, limit: 200 }).then((res) => {
 			if (!res.success) {
 				return MM.toast((res.data && res.data.message) ? res.data.message : 'Backfill failed.', 'error');
 			}
 			const inserted = (res.data && res.data.inserted) || 0;
 			const scanned = (res.data && res.data.scanned) || 0;
-			MM.toast(`Backfill complete: ${inserted} inserted (${scanned} scanned).`, 'success');
+			const more = !!(res.data && res.data.has_more);
+			const suffix = more ? ' Run again to process the next batch.' : '';
+			MM.toast(`Backfill complete: ${inserted} inserted (${scanned} scanned).${suffix}`, 'success');
 			MM.loadOrders(1);
 		});
 	};
 
-	MM.exportOrdersCsv = function () {
-		ajaxPost('meesho_get_orders', { page: 1, limit: 1000, status: '', search: '' }).then((res) => {
+	MM.exportOrdersCsv = async function () {
+		const pageLimit = 200;
+		let page = 1;
+		let total = 0;
+		let orders = [];
+		while (true) {
+			const res = await ajaxPost('meesho_get_orders', { page, limit: pageLimit, status: '', search: '' });
 			if (!res.success) return MM.toast('Export failed.', 'error');
-			const orders = (res.data && res.data.orders) || [];
+			const batch = (res.data && res.data.orders) || [];
+			total = (res.data && res.data.total) || batch.length;
+			orders = orders.concat(batch);
+			if (!batch.length || orders.length >= total) break;
+			page += 1;
+		}
+		if (!orders.length) return MM.toast('No orders to export.', 'info');
 			const lines = ['wc_order_id,meesho_order_id,tracking_id,status,payment,total,customer,phone,created_at'];
 			orders.forEach((o) => {
 				lines.push([
@@ -287,7 +300,7 @@
 			a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(lines.join('\n'));
 			a.download = 'meesho-orders.csv';
 			a.click();
-		});
+			MM.toast(`Exported ${orders.length} orders.`, 'success');
 	};
 
 	MM.taxonomies = { loaded: false, loading: null, categories: [], tags: [] };
