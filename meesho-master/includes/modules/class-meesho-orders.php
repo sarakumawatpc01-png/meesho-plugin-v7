@@ -104,6 +104,25 @@ array( '%d', '%s', '%s', '%s' )
 return (bool) $wpdb->insert_id;
 }
 
+private function log_order_failure( $wc_order_id, $context, $message, $payload = array() ) {
+$logger = new MM_Logger();
+$logger->log_before_change(
+'order_failure',
+'order',
+absint( $wc_order_id ),
+array(),
+array(
+'context' => sanitize_text_field( (string) $context ),
+'error'   => sanitize_text_field( (string) $message ),
+'data'    => is_array( $payload ) ? $payload : array(),
+),
+0,
+'auto',
+sanitize_textarea_field( (string) $context ),
+0
+);
+}
+
 public function ajax_get_orders() {
 meesho_master_verify_ajax_nonce();
 if ( ! current_user_can( 'manage_options' ) ) {
@@ -212,6 +231,7 @@ $this->assess_cod_risk( $order );
 }
 } elseif ( null !== $wpdb->last_error && '' !== $wpdb->last_error ) {
 $failed[] = array( 'order_id' => $order_id, 'error' => $wpdb->last_error );
+$this->log_order_failure( $order_id, 'backfill_insert', $wpdb->last_error, array( 'page' => $page, 'limit' => $limit ) );
 }
 }
 
@@ -252,7 +272,11 @@ if ( '' !== $notes ) {
 $update['notes'] = trim( (string) $row->notes . "\n[" . wp_date( 'd/m/Y H:i' ) . '] ' . $notes );
 }
 ( new MM_Logger() )->log_before_change( 'order_update', 'order', (int) $row->wc_order_id, (array) $row, $update, 0, 'manual' );
-$wpdb->update( $table, $update, array( 'id' => $order_id ) );
+$updated = $wpdb->update( $table, $update, array( 'id' => $order_id ) );
+if ( false === $updated ) {
+$this->log_order_failure( (int) $row->wc_order_id, 'manual_update', (string) $wpdb->last_error, array( 'order_id' => $order_id ) );
+wp_send_json_error( array( 'message' => 'Failed to update order.' ), 500 );
+}
 wp_send_json_success( 'Order updated.' );
 }
 
