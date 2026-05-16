@@ -37,15 +37,15 @@ Status summary:
   - [x] Sync/search/filters/exports/bulk actions
   - [x] Failure logs
 - [ ] Phase 5 SEO AI agent
-  - Status: partial implementation exists; validate and complete.
-  - [ ] Reconcile table/schema mismatches
+  - Status: in progress; table/schema mismatches reconciled, remaining autonomy/linking/dashboard work pending.
+  - [x] Reconcile table/schema mismatches
   - [ ] Harden scoring + suggestion storage
   - [ ] Autonomous optimization flows with approval/rollback
   - [ ] Internal linking engine modes
   - [ ] Monitoring dashboard (history/rollbacks/metrics)
 - [ ] Phase 6 Analytics
-  - Status: partial implementation exists; validate and complete.
-  - [ ] Repair data sources and table usage
+  - Status: in progress; key ranking table source mismatch repaired, integration/dashboard work pending.
+  - [x] Repair data sources and table usage
   - [ ] GA4/GSC/Woo/RankMath integrations
   - [ ] Dashboards/widgets with real-time refresh
 - [ ] Phase 7 Copilot workflow
