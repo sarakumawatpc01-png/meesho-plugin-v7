@@ -12,6 +12,8 @@
 			<option value="cancelled">Cancelled</option>
 			<option value="returned">Returned</option>
 		</select>
+		<button class="mm-btn mm-btn-outline" onclick="MeeshoMaster.backfillOrders()">🧩 Backfill Woo Orders</button>
+		<button class="mm-btn mm-btn-outline" onclick="MeeshoMaster.exportOrdersCsv()">📤 Export CSV</button>
 		<button class="mm-btn mm-btn-outline" onclick="MeeshoMaster.loadOrders()">🔄 Refresh</button>
 	</div>
 </div>

@@ -113,6 +113,181 @@
 		if (tab === 'seo') MM.loadSuggestions && MM.loadSuggestions();
 		if (tab === 'logs') MM.loadLogs && MM.loadLogs();
 		if (tab === 'analytics') MM.loadRankings && MM.loadRankings();
+		if (tab === 'orders') MM.loadOrders && MM.loadOrders();
+	};
+
+	/* ============================================================
+	 * Orders tab
+	 * ============================================================ */
+	MM.orders = { page: 1, editing: null };
+
+	MM.loadOrders = function (page = 1) {
+		const tbody = $('#orders_table_body');
+		if (!tbody) return;
+		MM.orders.page = Math.max(1, parseInt(page, 10) || 1);
+		const status = ($('#order_status_filter') || {}).value || '';
+		const search = ($('#order_search') || {}).value || '';
+		tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:30px;" class="mm-text-muted">Loading orders...</td></tr>';
+		ajaxPost('meesho_get_orders', { page: MM.orders.page, status, search }).then((res) => {
+			if (!res.success) {
+				tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:30px;" class="mm-text-muted">Failed to load orders.</td></tr>';
+				return;
+			}
+			const orders = (res.data && res.data.orders) || [];
+			if (!orders.length) {
+				tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:30px;" class="mm-text-muted">No orders found.</td></tr>';
+				return;
+			}
+			const rows = orders.map((o) => {
+				const items = Array.isArray(o.items) ? o.items : [];
+				const itemHtml = items.length ? items.map((it) => {
+					const quickLink = it.source_url
+						? `<a href="${escapeHtml(it.source_url)}" target="_blank" class="mm-btn mm-btn-sm mm-btn-outline" style="padding:2px 6px;line-height:1.2;">🔗 Source</a>`
+						: '';
+					return `<div style="margin-bottom:6px;">
+						<div><strong>${escapeHtml(it.name || '')}</strong></div>
+						<div class="mm-text-muted" style="font-size:12px;">SKU: ${escapeHtml(it.sku || '—')} ${it.size ? ' | Size: ' + escapeHtml(it.size) : ''} | Qty: ${escapeHtml(it.qty || 1)}</div>
+						${quickLink}
+					</div>`;
+				}).join('') : '<span class="mm-text-muted">No line items</span>';
+				const rowStyle = o.sla_status === 'breached' ? ' style="background:#fff1f2;"' : '';
+				const riskBadge = o.cod_risk === 'high' ? '<span class="mm-badge mm-badge-danger">RISK</span>' : '';
+				return `<tr${rowStyle}>
+					<td><strong>#${escapeHtml(o.wc_order_id)}</strong><div class="mm-text-muted" style="font-size:12px;">${escapeHtml(o.created_at || '')}</div></td>
+					<td>${itemHtml}</td>
+					<td>
+						<div><strong>${escapeHtml(o.customer_name || '—')}</strong></div>
+						<div style="font-size:12px;">${escapeHtml(o.phone || '')}</div>
+						<div class="mm-text-muted" style="font-size:12px;">${escapeHtml((o.address || '').replace(/\s+/g, ' ').trim())}</div>
+					</td>
+					<td>
+						<div>${escapeHtml(o.payment_method || '—')} ${riskBadge}</div>
+						<div style="font-size:12px;" class="mm-text-muted">₹${escapeHtml(o.order_total || 0)}</div>
+					</td>
+					<td>
+						<div><strong>${escapeHtml(o.fulfillment_status || '')}</strong></div>
+						<div style="font-size:12px;" class="mm-text-muted">Meesho ID: ${escapeHtml(o.meesho_order_id || '—')}</div>
+						<div style="font-size:12px;" class="mm-text-muted">Tracking: ${escapeHtml(o.tracking_id || '—')}</div>
+					</td>
+					<td>${escapeHtml(o.account_used || '—')}</td>
+					<td>${o.sla_status === 'breached' ? '<span class="mm-badge mm-badge-danger">Breached</span>' : '<span class="mm-badge mm-badge-success">OK</span>'}</td>
+					<td style="white-space:nowrap;">
+						<button class="mm-btn mm-btn-sm mm-btn-outline" onclick="MeeshoMaster.openOrderEdit(${o.id})">✏️ Edit</button>
+						<button class="mm-btn mm-btn-sm mm-btn-outline" onclick="MeeshoMaster.checkCODRisk(${o.wc_order_id})">🛡 COD</button>
+					</td>
+				</tr>`;
+			});
+			tbody.innerHTML = rows.join('');
+		});
+	};
+
+	MM.openOrderEdit = function (id) {
+		const modal = $('#order-edit-modal');
+		if (!modal) return;
+		const rows = $$('#orders_table_body tr');
+		const target = rows.find((r) => r.querySelector('button[onclick*="openOrderEdit(' + id + ')"]'));
+		if (!target) return MM.toast('Order row not found. Refresh and try again.', 'error');
+		MM.orders.editing = id;
+		const getText = (selector) => {
+			const el = target.querySelector(selector);
+			return el ? el.textContent.trim() : '';
+		};
+		($('#oe-order-id') || {}).textContent = String(id);
+		($('#oe-meesho-id') || {}).value = (getText('td:nth-child(5) div:nth-child(2)').replace('Meesho ID: ', '').trim() || '');
+		($('#oe-tracking') || {}).value = (getText('td:nth-child(5) div:nth-child(3)').replace('Tracking: ', '').trim() || '');
+		($('#oe-status') || {}).value = (getText('td:nth-child(5) div:nth-child(1)').trim() || 'pending');
+		const accountVal = getText('td:nth-child(6)').trim();
+		const accountSelect = $('#oe-account');
+		if (accountSelect) {
+			ajaxPost('meesho_get_accounts').then((res) => {
+				const accounts = (res.success && Array.isArray(res.data)) ? res.data : [];
+				accountSelect.innerHTML = '<option value="">Select account...</option>' +
+					accounts.map((a, idx) => `<option value="${escapeHtml(a.id || idx + 1)}">${escapeHtml(a.name || ('Account ' + (idx + 1)))}</option>`).join('');
+				if (accountVal) {
+					const match = Array.from(accountSelect.options).find((o) => o.textContent.trim() === accountVal || String(o.value) === accountVal);
+					if (match) accountSelect.value = match.value;
+				}
+			});
+		}
+		modal.classList.add('active');
+	};
+
+	MM.submitOrderEdit = function () {
+		const orderId = MM.orders.editing;
+		if (!orderId) return MM.toast('No order selected.', 'error');
+		const payload = {
+			order_id: orderId,
+			fulfillment_status: ($('#oe-status') || {}).value || 'pending',
+			meesho_order_id: ($('#oe-meesho-id') || {}).value || '',
+			tracking_id: ($('#oe-tracking') || {}).value || '',
+			account_used: ($('#oe-account') || {}).value || '',
+			notes: ($('#oe-notes') || {}).value || '',
+		};
+		ajaxPost('meesho_update_order', payload).then((res) => {
+			if (!res.success) {
+				MM.toast((res.data && res.data.message) ? res.data.message : 'Update failed.', 'error');
+				return;
+			}
+			MM.toast('Order updated.', 'success');
+			const modal = $('#order-edit-modal');
+			if (modal) modal.classList.remove('active');
+			MM.orders.editing = null;
+			($('#oe-notes') || {}).value = '';
+			MM.loadOrders(MM.orders.page);
+		});
+	};
+
+	MM.checkCODRisk = function (wcOrderId) {
+		ajaxPost('meesho_check_cod_risk', { wc_order_id: wcOrderId }).then((res) => {
+			if (!res.success) {
+				return MM.toast((res.data && res.data.message) ? res.data.message : 'Risk check failed.', 'error');
+			}
+			const reasons = (res.data && res.data.reasons) || [];
+			if (!reasons.length) {
+				MM.toast('COD risk: low.', 'success');
+				return;
+			}
+			alert('High COD risk:\n\n- ' + reasons.join('\n- '));
+		});
+	};
+
+	MM.backfillOrders = function () {
+		if (!confirm('Backfill mm_orders from existing WooCommerce orders now?')) return;
+		MM.toast('Backfilling orders…', 'info');
+		ajaxPost('meesho_backfill_orders').then((res) => {
+			if (!res.success) {
+				return MM.toast((res.data && res.data.message) ? res.data.message : 'Backfill failed.', 'error');
+			}
+			const inserted = (res.data && res.data.inserted) || 0;
+			const scanned = (res.data && res.data.scanned) || 0;
+			MM.toast(`Backfill complete: ${inserted} inserted (${scanned} scanned).`, 'success');
+			MM.loadOrders(1);
+		});
+	};
+
+	MM.exportOrdersCsv = function () {
+		ajaxPost('meesho_get_orders', { page: 1, status: '', search: '' }).then((res) => {
+			if (!res.success) return MM.toast('Export failed.', 'error');
+			const orders = (res.data && res.data.orders) || [];
+			const lines = ['wc_order_id,meesho_order_id,tracking_id,status,payment,total,customer,phone,created_at'];
+			orders.forEach((o) => {
+				lines.push([
+					o.wc_order_id || '',
+					JSON.stringify(o.meesho_order_id || ''),
+					JSON.stringify(o.tracking_id || ''),
+					JSON.stringify(o.fulfillment_status || ''),
+					JSON.stringify(o.payment_method || ''),
+					o.order_total || 0,
+					JSON.stringify(o.customer_name || ''),
+					JSON.stringify(o.phone || ''),
+					JSON.stringify(o.created_at || ''),
+				].join(','));
+			});
+			const a = document.createElement('a');
+			a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(lines.join('\n'));
+			a.download = 'meesho-orders.csv';
+			a.click();
+		});
 	};
 
 	MM.taxonomies = { loaded: false, loading: null, categories: [], tags: [] };
@@ -1086,6 +1261,8 @@
 		if ($('#suggestions_tbody')) MM.loadSuggestions();
 		// Logs tab auto-load
 		if ($('#logs_table_body')) MM.loadLogs();
+		// Orders tab auto-load
+		if ($('#orders_table_body')) MM.loadOrders();
 		// Settings — OpenRouter button (supports both old and new IDs)
 		const orBtn = $('#mm_refresh_or_models') || $('#btn_refresh_openrouter_models');
 		if (orBtn) orBtn.addEventListener('click', () => MM.refreshOpenRouterModels(true));

@@ -31,10 +31,10 @@ Status summary:
   - [ ] Quality rules (SEO/GEO/AIO)
   - [ ] Publishing controls (schedule/revisions/excerpts/schema)
 - [ ] Phase 4 Orders
-  - Status: partial implementation exists; validate and complete.
-  - [ ] Backfill mm_orders from WooCommerce orders
-  - [ ] Meesho SKU → URL mapping + quick actions
-  - [ ] Sync/search/filters/exports/bulk actions
+  - Status: in progress; backfill, mapping quick-actions, and core sync/search/export shipped.
+  - [x] Backfill mm_orders from WooCommerce orders
+  - [x] Meesho SKU → URL mapping + quick actions
+  - [x] Sync/search/filters/exports/bulk actions
   - [ ] Failure logs
 - [ ] Phase 5 SEO AI agent
   - Status: partial implementation exists; validate and complete.
