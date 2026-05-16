@@ -288,25 +288,25 @@
 			page += 1;
 		}
 		if (!orders.length) return MM.toast('No orders to export.', 'info');
-			const lines = ['wc_order_id,meesho_order_id,tracking_id,status,payment,total,customer,phone,created_at'];
-			orders.forEach((o) => {
-				lines.push([
-					csvEscape(o.wc_order_id || ''),
-					csvEscape(o.meesho_order_id || ''),
-					csvEscape(o.tracking_id || ''),
-					csvEscape(o.fulfillment_status || ''),
-					csvEscape(o.payment_method || ''),
-					csvEscape(o.order_total || 0),
-					csvEscape(o.customer_name || ''),
-					csvEscape(o.phone || ''),
-					csvEscape(o.created_at || ''),
-				].join(','));
-			});
-			const a = document.createElement('a');
-			a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(lines.join('\n'));
-			a.download = 'meesho-orders.csv';
-			a.click();
-			MM.toast(`Exported ${orders.length} orders.`, 'success');
+		const lines = ['wc_order_id,meesho_order_id,tracking_id,status,payment,total,customer,phone,created_at'];
+		orders.forEach((o) => {
+			lines.push([
+				csvEscape(o.wc_order_id || ''),
+				csvEscape(o.meesho_order_id || ''),
+				csvEscape(o.tracking_id || ''),
+				csvEscape(o.fulfillment_status || ''),
+				csvEscape(o.payment_method || ''),
+				csvEscape(o.order_total || 0),
+				csvEscape(o.customer_name || ''),
+				csvEscape(o.phone || ''),
+				csvEscape(o.created_at || ''),
+			].join(','));
+		});
+		const a = document.createElement('a');
+		a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(lines.join('\n'));
+		a.download = 'meesho-orders.csv';
+		a.click();
+		MM.toast(`Exported ${orders.length} orders.`, 'success');
 	};
 
 	MM.taxonomies = { loaded: false, loading: null, categories: [], tags: [] };
