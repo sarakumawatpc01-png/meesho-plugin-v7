@@ -44,7 +44,7 @@ Status summary:
   - [ ] Internal linking engine modes
   - [ ] Monitoring dashboard (history/rollbacks/metrics)
 - [ ] Phase 6 Analytics
-  - Status: in progress; key ranking table source mismatch repaired, integration/dashboard work pending.
+  - Status: in progress; ranking source fix + AJAX force-refresh support shipped, integrations/widgets still pending.
   - [x] Repair data sources and table usage
   - [ ] GA4/GSC/Woo/RankMath integrations
   - [ ] Dashboards/widgets with real-time refresh

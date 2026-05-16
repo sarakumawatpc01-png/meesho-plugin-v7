@@ -45,10 +45,13 @@ return;
 echo "<!-- Hotjar Tracking Code -->\n<script>(function(h,o,t,j,a,r){h.hj=h.hj||function(){(h.hj.q=h.hj.q||[]).push(arguments)};h._hjSettings={hjid:" . intval( $site_id ) . ",hjsv:6};a=o.getElementsByTagName('head')[0];r=o.createElement('script');r.async=1;r.src=t+h._hjSettings.hjid+j+h._hjSettings.hjsv;a.appendChild(r);})(window,document,'https://static.hotjar.com/c/hotjar-','.js?sv=');</script>\n";
 }
 
-public function fetch_gsc_data( $keyword ) {
+public function fetch_gsc_data( $keyword, $force_refresh = false ) {
 $cache_key = 'mm_gsc_' . md5( $keyword );
+if ( $force_refresh ) {
+delete_transient( $cache_key );
+}
 $cached = get_transient( $cache_key );
-if ( false !== $cached ) {
+if ( ! $force_refresh && false !== $cached ) {
 return $cached;
 }
 $settings = new Meesho_Master_Settings();
@@ -303,7 +306,15 @@ wp_send_json_error( array( 'message' => 'Unauthorized' ), 403 );
 global $wpdb;
 $table = MM_DB::table( 'ranking_data' );
 $rows = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM {$table} ORDER BY recorded_at DESC LIMIT %d", 100 ) );
-wp_send_json_success( $rows );
+$latest_date = '';
+if ( ! empty( $rows ) && ! empty( $rows[0]->recorded_at ) ) {
+$latest_date = (string) $rows[0]->recorded_at;
+}
+wp_send_json_success( array(
+'rows'            => $rows,
+'latest_recorded' => $latest_date,
+'generated_at'    => current_time( 'mysql' ),
+) );
 }
 
 public function ajax_add_keyword() {
@@ -312,10 +323,11 @@ if ( ! current_user_can( 'manage_options' ) ) {
 wp_send_json_error( array( 'message' => 'Unauthorized' ), 403 );
 }
 $keyword = sanitize_text_field( wp_unslash( $_POST['keyword'] ?? '' ) );
+$force_refresh = ! empty( $_POST['force_refresh'] );
 if ( '' === $keyword ) {
 wp_send_json_error( array( 'message' => 'Keyword required' ), 400 );
 }
-$rows = $this->fetch_gsc_data( $keyword );
+$rows = $this->fetch_gsc_data( $keyword, $force_refresh );
 if ( is_wp_error( $rows ) ) {
 wp_send_json_error( array( 'message' => $rows->get_error_message() ), 400 );
 }
@@ -385,9 +397,16 @@ wp_send_json_error( array( 'message' => '⚠️ GA4 not configured. Go to Settin
 }
 $range      = absint( $_POST['range'] ?? 30 );
 $range      = in_array( $range, array( 7, 30, 90 ), true ) ? $range : 30;
+$force_refresh = ! empty( $_POST['force_refresh'] );
 $cache_key  = 'mm_ga4_data_' . $property_id . '_' . $range;
+if ( $force_refresh ) {
+delete_transient( $cache_key );
+}
 $cached     = get_transient( $cache_key );
-if ( false !== $cached ) {
+if ( ! $force_refresh && false !== $cached ) {
+if ( is_array( $cached ) ) {
+$cached['cache_hit'] = true;
+}
 wp_send_json_success( $cached );
 }
 $ga4_mode = $settings->get( 'mm_ga4_mode', 'site_kit' );
@@ -468,7 +487,13 @@ $body = json_decode( wp_remote_retrieve_body( $response ), true );
 if ( empty( $body ) ) {
 wp_send_json_error( array( 'message' => 'Empty response from GA4 API. Check property ID and permissions.' ) );
 }
-$result = array( 'rows' => $body['rows'] ?? array(), 'range' => $range, 'property_id' => $property_id );
+$result = array(
+'rows'        => $body['rows'] ?? array(),
+'range'       => $range,
+'property_id' => $property_id,
+'cache_hit'   => false,
+'fetched_at'  => current_time( 'mysql' ),
+);
 set_transient( $cache_key, $result, HOUR_IN_SECONDS );
 wp_send_json_success( $result );
 }
