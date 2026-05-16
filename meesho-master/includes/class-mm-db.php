@@ -83,6 +83,16 @@ public static function table_exists( $key_or_full ) {
 	return $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $name ) ) === $name;
 }
 
+private static function column_exists( $table, $column ) {
+	global $wpdb;
+
+	if ( ! self::is_safe_identifier( $table ) || ! self::is_safe_identifier( $column ) ) {
+		return false;
+	}
+
+	return (bool) $wpdb->get_var( $wpdb->prepare( "SHOW COLUMNS FROM {$table} LIKE %s", $column ) );
+}
+
 /**
  * Force a fresh install regardless of stored version. Used by the
  * "Repair Database" button in Settings.
@@ -282,7 +292,10 @@ $wpdb->query( "ALTER TABLE " . self::table( 'seo_suggestions' ) . " ADD COLUMN I
 $wpdb->query( "ALTER TABLE " . self::table( 'seo_suggestions' ) . " ADD COLUMN IF NOT EXISTS run_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0 AFTER geo_score" );
 
 // Migrate old 'type' column to 'suggestion_type' if needed
-$wpdb->query( "UPDATE " . self::table( 'seo_suggestions' ) . " SET suggestion_type = type WHERE suggestion_type = '' AND type != ''" );
+$seo_suggestions_table = self::table( 'seo_suggestions' );
+if ( self::column_exists( $seo_suggestions_table, 'type' ) ) {
+	$wpdb->query( "UPDATE {$seo_suggestions_table} SET suggestion_type = type WHERE suggestion_type = '' AND type != ''" );
+}
 
 $wpdb->query( "ALTER TABLE " . self::table( 'seo_score_history' ) . " ADD COLUMN IF NOT EXISTS run_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0 AFTER geo_score" );
 
@@ -309,7 +322,7 @@ global $wpdb;
 $seo_suggestions = self::table( 'seo_suggestions' );
 $legacy_suggestions = self::legacy_table( 'seo_suggestions' );
 if ( $legacy_suggestions && self::table_exists( $legacy_suggestions ) ) {
-$wpdb->query( "INSERT IGNORE INTO {$seo_suggestions} (id, post_id, type, current_value, suggested_value, reasoning, priority, confidence, safe_to_apply, status, created_at, applied_at) SELECT id, post_id, type, current_value, suggested_value, reasoning, priority, confidence, safe_to_apply, status, STR_TO_DATE(created_at, '%d/%m/%Y'), NULLIF(STR_TO_DATE(applied_at, '%d/%m/%Y'), '0000-00-00 00:00:00') FROM {$legacy_suggestions}" );
+	$wpdb->query( "INSERT IGNORE INTO {$seo_suggestions} (id, post_id, suggestion_type, current_value, suggested_value, reasoning, priority, confidence, safe_to_apply, status, created_at, applied_at) SELECT id, post_id, type, current_value, suggested_value, reasoning, priority, confidence, safe_to_apply, status, STR_TO_DATE(created_at, '%d/%m/%Y'), NULLIF(STR_TO_DATE(applied_at, '%d/%m/%Y'), '0000-00-00 00:00:00') FROM {$legacy_suggestions}" );
 }
 
 $audit_log = self::table( 'audit_log' );

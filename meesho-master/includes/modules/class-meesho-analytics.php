@@ -229,7 +229,7 @@ $ai_actions   = (int) $wpdb->get_var( $wpdb->prepare(
 ) );
 
 // e. GSC top 5 keywords
-$ranking_table = MM_DB::table( 'seo_rankings' );
+$ranking_table = MM_DB::table( 'ranking_data' );
 $ranking_table_exists = $wpdb->get_var( "SHOW TABLES LIKE '{$ranking_table}'" );
 $gsc_rows = array();
 if ( $ranking_table_exists ) {

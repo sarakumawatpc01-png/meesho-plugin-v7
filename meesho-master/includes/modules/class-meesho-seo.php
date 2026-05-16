@@ -311,7 +311,7 @@ continue;
 $types[] = $type;
 $payload = array(
 'post_id'         => $post_id,
-'type'            => $type,
+'suggestion_type' => $type,
 'current_value'   => (string) ( $suggestion['current_value'] ?? '' ),
 'suggested_value' => (string) ( $suggestion['suggested_value'] ?? '' ),
 'reasoning'       => sanitize_textarea_field( $suggestion['reasoning'] ?? '' ),
@@ -322,6 +322,7 @@ $payload = array(
 'created_at'      => current_time( 'mysql' ),
 );
 $wpdb->insert( $table, $payload, array( '%d', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s' ) );
+$payload['type'] = $type;
 $payload['id'] = (int) $wpdb->insert_id;
 $stored[]      = $payload;
 }
@@ -331,7 +332,7 @@ $wpdb->insert(
 $table,
 array(
 'post_id'         => $post_id,
-'type'            => 'statistics_inject',
+'suggestion_type' => 'statistics_inject',
 'current_value'   => '',
 'suggested_value' => 'Add one verified factual sentence with a current statistic relevant to this topic.',
 'reasoning'       => 'Factual density is too low for GEO scoring.',
@@ -365,6 +366,9 @@ $table = MM_DB::table( 'seo_suggestions' );
 $row   = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d", $suggestion_id ), ARRAY_A );
 if ( empty( $row ) ) {
 return new WP_Error( 'not_found', 'Suggestion not found.' );
+}
+if ( empty( $row['type'] ) && ! empty( $row['suggestion_type'] ) ) {
+	$row['type'] = $row['suggestion_type'];
 }
 $implementor = new MM_SEO_Implementor();
 return $implementor->apply( $row, $actor );
@@ -450,6 +454,9 @@ $rows = $wpdb->get_results( $wpdb->prepare( $sql, ...$params ) );
 // v6.5 — enrich with clickable post info
 if ( is_array( $rows ) ) {
 	foreach ( $rows as &$r ) {
+		if ( empty( $r->type ) && ! empty( $r->suggestion_type ) ) {
+			$r->type = $r->suggestion_type;
+		}
 		if ( ! empty( $r->post_id ) ) {
 			$r->post_title = get_the_title( $r->post_id ) ?: '(no title)';
 			$r->edit_url   = get_edit_post_link( $r->post_id, 'raw' );
@@ -483,6 +490,9 @@ $table = MM_DB::table( 'seo_suggestions' );
 $rows = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM {$table} WHERE status = %s", 'pending' ), ARRAY_A );
 $applied = 0;
 foreach ( $rows as $row ) {
+	if ( empty( $row['type'] ) && ! empty( $row['suggestion_type'] ) ) {
+		$row['type'] = $row['suggestion_type'];
+	}
 if ( MM_SEO_Safety::can_auto_apply( $row ) ) {
 $result = $this->apply_suggestion( (int) $row['id'], 'ai_auto' );
 if ( ! is_wp_error( $result ) ) {
