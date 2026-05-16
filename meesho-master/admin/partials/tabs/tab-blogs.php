@@ -88,7 +88,7 @@ $blog_model  = $settings->get( 'mm_openrouter_model_blog' );
 			<div class="mm-form-row">
 				<label class="mm-label">Featured image URL (optional)</label>
 				<input type="url" id="mm_blog_featured_image" class="mm-input" placeholder="https://example.com/image.jpg">
-				<div class="mm-text-muted" style="font-size:11px;margin-top:4px;">If this URL already exists in WordPress Media Library, it will be set as the featured image.</div>
+				<div class="mm-text-muted" style="font-size:11px;margin-top:4px;">If this URL already exists in WordPress Media Library, it will be set as featured image; otherwise only the URL is saved in post meta for later use.</div>
 			</div>
 			<div class="mm-form-row" id="mm_blog_schedule_wrap" style="display:none;">
 				<label class="mm-label">Publish schedule</label>
