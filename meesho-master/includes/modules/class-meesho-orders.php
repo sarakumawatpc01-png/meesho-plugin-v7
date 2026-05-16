@@ -112,7 +112,7 @@ wp_send_json_error( array( 'message' => 'Unauthorized' ), 403 );
 global $wpdb;
 $table  = MM_DB::table( 'orders' );
 $page   = max( 1, absint( $_POST['page'] ?? 1 ) );
-$limit  = max( 1, min( 1000, absint( $_POST['limit'] ?? 25 ) ) );
+$limit  = max( 1, min( 500, absint( $_POST['limit'] ?? 25 ) ) );
 $offset = ( $page - 1 ) * $limit;
 $where = array( '1=1' );
 $params = array();

@@ -269,6 +269,12 @@
 
 	MM.exportOrdersCsv = async function () {
 		const pageLimit = 200;
+		const csvEscape = (value) => {
+			const str = value == null ? '' : String(value);
+			const escaped = str.replace(/"/g, '""');
+			if (/[",\n\r]/.test(escaped)) return `"${escaped}"`;
+			return escaped;
+		};
 		let page = 1;
 		let total = 0;
 		let orders = [];
@@ -285,15 +291,15 @@
 			const lines = ['wc_order_id,meesho_order_id,tracking_id,status,payment,total,customer,phone,created_at'];
 			orders.forEach((o) => {
 				lines.push([
-					o.wc_order_id || '',
-					JSON.stringify(o.meesho_order_id || ''),
-					JSON.stringify(o.tracking_id || ''),
-					JSON.stringify(o.fulfillment_status || ''),
-					JSON.stringify(o.payment_method || ''),
-					o.order_total || 0,
-					JSON.stringify(o.customer_name || ''),
-					JSON.stringify(o.phone || ''),
-					JSON.stringify(o.created_at || ''),
+					csvEscape(o.wc_order_id || ''),
+					csvEscape(o.meesho_order_id || ''),
+					csvEscape(o.tracking_id || ''),
+					csvEscape(o.fulfillment_status || ''),
+					csvEscape(o.payment_method || ''),
+					csvEscape(o.order_total || 0),
+					csvEscape(o.customer_name || ''),
+					csvEscape(o.phone || ''),
+					csvEscape(o.created_at || ''),
 				].join(','));
 			});
 			const a = document.createElement('a');
