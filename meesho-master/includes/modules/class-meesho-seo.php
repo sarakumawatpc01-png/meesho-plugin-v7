@@ -659,15 +659,22 @@ wp_send_json_success( array( 'message' => 'llms.txt generated.', 'content' => $r
 	}
 
 	private function normalize_suggestion_row( $row ) {
+		$type = '';
+		$suggestion_type = '';
 		if ( is_array( $row ) ) {
-			if ( empty( $row['type'] ) && ! empty( $row['suggestion_type'] ) ) {
-				$row['type'] = $row['suggestion_type'];
-			}
-			return $row;
+			$type            = (string) ( $row['type'] ?? '' );
+			$suggestion_type = (string) ( $row['suggestion_type'] ?? '' );
+		} elseif ( is_object( $row ) ) {
+			$type            = (string) ( $row->type ?? '' );
+			$suggestion_type = (string) ( $row->suggestion_type ?? '' );
 		}
 
-		if ( is_object( $row ) && empty( $row->type ) && ! empty( $row->suggestion_type ) ) {
-			$row->type = $row->suggestion_type;
+		if ( '' === $type && '' !== $suggestion_type ) {
+			if ( is_array( $row ) ) {
+				$row['type'] = $suggestion_type;
+			} elseif ( is_object( $row ) ) {
+				$row->type = $suggestion_type;
+			}
 		}
 
 		return $row;
