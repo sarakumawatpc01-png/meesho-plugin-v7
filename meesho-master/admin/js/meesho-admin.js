@@ -266,7 +266,7 @@
 	};
 
 	MM.exportOrdersCsv = function () {
-		ajaxPost('meesho_get_orders', { page: 1, status: '', search: '' }).then((res) => {
+		ajaxPost('meesho_get_orders', { page: 1, limit: 1000, status: '', search: '' }).then((res) => {
 			if (!res.success) return MM.toast('Export failed.', 'error');
 			const orders = (res.data && res.data.orders) || [];
 			const lines = ['wc_order_id,meesho_order_id,tracking_id,status,payment,total,customer,phone,created_at'];

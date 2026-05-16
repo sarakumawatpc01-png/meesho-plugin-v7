@@ -63,7 +63,10 @@ return $cache[ $sku ];
 global $wpdb;
 $sku_variants = array( $sku );
 if ( false !== strpos( $sku, '-' ) ) {
-$sku_variants[] = explode( '-', $sku )[0];
+$parts = explode( '-', $sku );
+if ( ! empty( $parts ) && '' !== trim( (string) $parts[0] ) ) {
+$sku_variants[] = trim( (string) $parts[0] );
+}
 }
 $sku_variants = array_values( array_unique( array_filter( $sku_variants ) ) );
 
@@ -109,7 +112,7 @@ wp_send_json_error( array( 'message' => 'Unauthorized' ), 403 );
 global $wpdb;
 $table  = MM_DB::table( 'orders' );
 $page   = max( 1, absint( $_POST['page'] ?? 1 ) );
-$limit  = 25;
+$limit  = max( 1, min( 1000, absint( $_POST['limit'] ?? 25 ) ) );
 $offset = ( $page - 1 ) * $limit;
 $where = array( '1=1' );
 $params = array();
