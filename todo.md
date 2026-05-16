@@ -37,9 +37,9 @@ Status summary:
   - [x] Sync/search/filters/exports/bulk actions
   - [x] Failure logs
 - [ ] Phase 5 SEO AI agent
-  - Status: in progress; table/schema mismatches reconciled, remaining autonomy/linking/dashboard work pending.
+  - Status: in progress; schema + suggestion storage hardening shipped, autonomy/linking/dashboard work pending.
   - [x] Reconcile table/schema mismatches
-  - [ ] Harden scoring + suggestion storage
+  - [x] Harden scoring + suggestion storage
   - [ ] Autonomous optimization flows with approval/rollback
   - [ ] Internal linking engine modes
   - [ ] Monitoring dashboard (history/rollbacks/metrics)
