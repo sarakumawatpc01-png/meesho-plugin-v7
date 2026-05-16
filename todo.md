@@ -16,26 +16,26 @@ Status summary:
   - [x] UI/UX gaps report (reports/phase-1-ui-ux.md)
   - [x] Consolidate architecture/missing features/security/performance/UI reports (reports/phase-1-summary.md)
 - [ ] Phase 2 Product import fixes
-  - Status: in progress; core data cleanup/mapping/validation shipped, queue/retry/logging still pending.
+  - Status: in progress; core data cleanup/mapping/validation shipped, queue/retry/logging + scoped import tab styling now shipped.
   - [x] Strengthen description cleanup pipeline (DOM cleanup + allowlist review)
   - [x] Formatter for headings/lists/tables/images
   - [x] Eliminate layout-breaking styles/scripts/wrappers
-  - [ ] Scope any frontend CSS used by imports
-  - [ ] Import queue/progress/retry/logs
+  - [x] Scope any frontend CSS used by imports
+  - [x] Import queue/progress/retry/logs
   - [x] Duplicate/SKU handling + category/tag mapping
   - [x] Image optimization + validation
 - [ ] Phase 3 Blog system rebuild
-  - Status: in progress; editor/save controls expanded, quality/publishing governance still pending.
+  - Status: in progress; editor/save controls expanded, quality checks shipped, publishing governance still pending.
   - [x] UI fields: slug/status/category/tags/featured image/preview/publish/draft
   - [x] Live streaming generation UX with progress states
-  - [ ] Quality rules (SEO/GEO/AIO)
+  - [x] Quality rules (SEO/GEO/AIO)
   - [ ] Publishing controls (schedule/revisions/excerpts/schema)
 - [ ] Phase 4 Orders
-  - Status: in progress; backfill, mapping quick-actions, and core sync/search/export shipped.
+  - Status: in progress; backfill, mapping quick-actions, sync/search/export, and failure logs are shipped.
   - [x] Backfill mm_orders from WooCommerce orders
   - [x] Meesho SKU → URL mapping + quick actions
   - [x] Sync/search/filters/exports/bulk actions
-  - [ ] Failure logs
+  - [x] Failure logs
 - [ ] Phase 5 SEO AI agent
   - Status: partial implementation exists; validate and complete.
   - [ ] Reconcile table/schema mismatches

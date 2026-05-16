@@ -13,6 +13,7 @@
 			<option value="returned">Returned</option>
 		</select>
 		<button class="mm-btn mm-btn-outline" onclick="MeeshoMaster.backfillOrders()">🧩 Backfill Woo Orders</button>
+		<button class="mm-btn mm-btn-outline" onclick="MeeshoMaster.toggleOrderFailureLogs()">⚠️ Failure Logs</button>
 		<button class="mm-btn mm-btn-outline" onclick="MeeshoMaster.exportOrdersCsv()">📤 Export CSV</button>
 		<button class="mm-btn mm-btn-outline" onclick="MeeshoMaster.loadOrders()">🔄 Refresh</button>
 	</div>
@@ -43,6 +44,25 @@
 	<span class="mm-badge mm-badge-danger">RISK</span> = High COD risk &nbsp;|&nbsp;
 	📋 = Copy to clipboard
 </p>
+
+<div class="mm-card" id="order_failure_logs_wrap" style="display:none;">
+	<h3>⚠️ Order Failure Logs</h3>
+	<div style="overflow-x:auto;">
+		<table class="mm-table">
+			<thead>
+				<tr>
+					<th>Time</th>
+					<th>Context</th>
+					<th>Error</th>
+					<th>Source</th>
+				</tr>
+			</thead>
+			<tbody id="order_failure_logs_body">
+				<tr><td colspan="4" class="mm-text-muted" style="text-align:center;padding:16px;">No logs loaded.</td></tr>
+			</tbody>
+		</table>
+	</div>
+</div>
 
 <!-- Order Edit Modal -->
 <div class="mm-modal-overlay" id="order-edit-modal">

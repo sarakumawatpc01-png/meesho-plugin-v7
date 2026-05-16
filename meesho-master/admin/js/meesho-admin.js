@@ -267,6 +267,52 @@
 		});
 	};
 
+	MM.loadOrderFailureLogs = function () {
+		const wrap = $('#order_failure_logs_wrap');
+		const body = $('#order_failure_logs_body');
+		if (!wrap || !body) return;
+		wrap.style.display = '';
+		body.innerHTML = '<tr><td colspan="4" class="mm-text-muted" style="text-align:center;padding:16px;">Loading failure logs…</td></tr>';
+		ajaxPost('mm_get_logs', { action_type: 'order_failure', source: 'auto', page: 1 }).then((res) => {
+			if (!res.success) {
+				body.innerHTML = '<tr><td colspan="4" class="mm-text-muted" style="text-align:center;padding:16px;">Failed to load failure logs.</td></tr>';
+				return;
+			}
+			const logs = (res.data && res.data.logs) || [];
+			if (!logs.length) {
+				body.innerHTML = '<tr><td colspan="4" class="mm-text-muted" style="text-align:center;padding:16px;">No order failures logged yet.</td></tr>';
+				return;
+			}
+			body.innerHTML = logs.map((log) => {
+				let details = '';
+				if (log.new_value) {
+					try {
+						const parsed = JSON.parse(log.new_value);
+						details = parsed.error || parsed.context || '';
+					} catch (e) {
+						details = String(log.new_value).slice(0, 180);
+					}
+				}
+				return `<tr>
+					<td>${escapeHtml(log.created_at || '')}</td>
+					<td>${escapeHtml(log.note || '')}</td>
+					<td style="max-width:180px;word-break:break-word;">${escapeHtml(details || '—')}</td>
+					<td style="max-width:240px;word-break:break-all;">${escapeHtml(log.actor || 'auto')}</td>
+				</tr>`;
+			}).join('');
+		});
+	};
+
+	MM.toggleOrderFailureLogs = function () {
+		const wrap = $('#order_failure_logs_wrap');
+		if (!wrap) return;
+		if (wrap.style.display === 'none' || !wrap.style.display) {
+			MM.loadOrderFailureLogs();
+		} else {
+			wrap.style.display = 'none';
+		}
+	};
+
 	MM.exportOrdersCsv = async function () {
 		const pageLimit = 200;
 		const csvEscape = (value) => {
@@ -356,6 +402,90 @@
 		const btnHtml = $('#btn_import_html');
 		const btnManual = $('#btn_manual_sku');
 		const out = $('#import_results');
+		const queueUrls = $('#mm_import_queue_urls');
+		const queueAddBtn = $('#mm_import_queue_add_btn');
+		const queueProcessBtn = $('#mm_import_queue_process_btn');
+		const queueRefreshBtn = $('#mm_import_queue_refresh_btn');
+		const queueStatus = $('#mm_import_queue_status');
+		const queueList = $('#mm_import_queue_list');
+
+		const renderQueue = (payload) => {
+			if (!queueStatus || !queueList) return;
+			const summary = (payload && payload.summary) || {};
+			const items = (payload && payload.items) || [];
+			queueStatus.textContent =
+				`Total ${summary.total || 0} · Pending ${summary.pending || 0} · Processing ${summary.processing || 0} · Retry ${summary.retry || 0} · Done ${summary.done || 0} · Failed ${summary.failed || 0} · Duplicate ${summary.duplicate || 0}`;
+			if (!items.length) {
+				queueList.innerHTML = '<p class="mm-text-muted">Queue is empty.</p>';
+				return;
+			}
+			queueList.innerHTML = '<table class="mm-table"><thead><tr><th>ID</th><th>URL</th><th>Status</th><th>Attempts</th><th>Last error</th></tr></thead><tbody>' +
+				items.map((it) => `<tr>
+					<td>${escapeHtml(it.id || '')}</td>
+					<td style="max-width:360px;word-break:break-all;">${escapeHtml(it.url || '')}</td>
+					<td>${escapeHtml(it.status || '')}</td>
+					<td>${escapeHtml(it.attempts || 0)}</td>
+					<td style="max-width:280px;word-break:break-word;">${escapeHtml(it.last_error || '')}</td>
+				</tr>`).join('') +
+				'</tbody></table>';
+		};
+
+		const refreshQueue = () => {
+			if (!queueStatus || !queueList) return;
+			queueStatus.textContent = 'Loading queue…';
+			ajaxPost('mm_import_queue_status').then((res) => {
+				if (!res.success) {
+					queueStatus.textContent = 'Failed to load queue status.';
+					return;
+				}
+				renderQueue(res.data || {});
+			});
+		};
+
+		if (queueAddBtn) {
+			queueAddBtn.addEventListener('click', () => {
+				const urls = (queueUrls && queueUrls.value) ? queueUrls.value : '';
+				if (!urls.trim()) return MM.toast('Add at least one URL to queue.', 'error');
+				queueAddBtn.disabled = true;
+				ajaxPost('mm_import_queue_add', { urls }).then((res) => {
+					queueAddBtn.disabled = false;
+					if (!res.success) return MM.toast('Failed to add queue items.', 'error');
+					if (queueUrls) queueUrls.value = '';
+					MM.toast(`Queue updated: ${res.data.added || 0} added, ${res.data.skipped || 0} skipped.`, 'success');
+					renderQueue(res.data || {});
+				});
+			});
+		}
+
+		if (queueProcessBtn) {
+			queueProcessBtn.addEventListener('click', () => {
+				queueProcessBtn.disabled = true;
+				queueProcessBtn.textContent = '⏳ Processing…';
+				ajaxPost('mm_import_queue_process').then((res) => {
+					queueProcessBtn.disabled = false;
+					queueProcessBtn.textContent = '▶ Process Next';
+					if (!res.success) {
+						MM.toast('Queue processing failed.', 'error');
+						return;
+					}
+					if (res.data && res.data.done) {
+						MM.toast('Queue complete. No pending items.', 'info');
+					} else {
+						const item = (res.data && res.data.item) || {};
+						MM.toast(`Processed #${item.id || ''}: ${item.status || 'done'}`, item.status === 'failed' ? 'error' : 'success');
+					}
+					renderQueue(res.data || {});
+					setTimeout(() => MM.bindImportTab && MM.bindImportTab(), 500);
+				});
+			});
+		}
+
+		if (queueRefreshBtn) {
+			queueRefreshBtn.addEventListener('click', refreshQueue);
+		}
+		if (queueStatus && queueList) {
+			refreshQueue();
+		}
 
 		// Load recent staged products preview (v6.5 — full-card layout)
 		const recentGrid = $('#mm_import_recent_grid');
@@ -1882,8 +2012,53 @@
 		const postStatusEl = $('#mm_blog_status_select');
 		const scheduleWrapEl = $('#mm_blog_schedule_wrap');
 		const scheduleInputEl = $('#mm_blog_schedule_at');
+		const qualityEl = $('#mm_blog_quality_report');
 		const saveBtnDefault = saveBtn ? saveBtn.textContent : '💾 Save Post';
 		const statusUpdateIntervalMs = 3000;
+		const evaluateBlogQuality = () => {
+			const title = (($('#mm_blog_preview_title') || {}).value || '').trim();
+			const content = (($('#mm_blog_preview_content') || {}).value || '').trim();
+			const meta = (($('#mm_blog_preview_meta') || {}).value || '').trim();
+			const keyword = (($('#mm_blog_keyword') || {}).value || '').trim().toLowerCase();
+			const plainContent = content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+			const wordCount = plainContent ? plainContent.split(' ').length : 0;
+			let score = 100;
+			const issues = [];
+			if (title.length < 30 || title.length > 65) {
+				score -= 15;
+				issues.push('Title should ideally be 30–65 characters.');
+			}
+			if (!keyword) {
+				score -= 10;
+				issues.push('Primary keyword is missing.');
+			} else if (title.toLowerCase().indexOf(keyword) === -1) {
+				score -= 10;
+				issues.push('Primary keyword is not present in title.');
+			}
+			if (wordCount < 600) {
+				score -= 20;
+				issues.push('Content is short; target at least ~600 words for stronger SEO/AEO coverage.');
+			}
+			if (!/<h2[\s>]/i.test(content)) {
+				score -= 10;
+				issues.push('Missing H2 headings for structure.');
+			}
+			if (!/<ul[\s>]|<ol[\s>]/i.test(content)) {
+				score -= 10;
+				issues.push('No list detected; consider adding concise bullet points.');
+			}
+			if (meta.length < 120 || meta.length > 160) {
+				score -= 10;
+				issues.push('Meta description should be ~120–160 characters.');
+			}
+			score = Math.max(0, score);
+			if (qualityEl) {
+				const badge = score >= 80 ? 'mm-badge-success' : (score >= 60 ? 'mm-badge-warning' : 'mm-badge-danger');
+				qualityEl.innerHTML = `<div><strong>Quality score:</strong> <span class="mm-badge ${badge}">${score}/100</span> <span class="mm-text-muted">(SEO/GEO/AIO checks)</span></div>` +
+					(issues.length ? `<ul style="margin:8px 0 0 16px;">${issues.map((i) => `<li>${escapeHtml(i)}</li>`).join('')}</ul>` : '<div class="mm-text-muted" style="margin-top:6px;">No major issues found.</div>');
+			}
+			return { score, issues };
+		};
 
 		const syncScheduleVisibility = () => {
 			if (!scheduleWrapEl || !postStatusEl) return;
@@ -1977,6 +2152,7 @@
 			if (statusEl) statusEl.textContent = `✅ Draft generated using ${escapeHtml(res.data.model || 'AI')}. Edit if needed, then click Save Post.`;
 			if (saveBtn) saveBtn.style.display = '';
 			MM.toast('Blog draft generated! Review and save.', 'success');
+			evaluateBlogQuality();
 		});
 
 		if (saveBtn) saveBtn.addEventListener('click', async () => {
@@ -1992,6 +2168,8 @@
 			const scheduleAt = ($('#mm_blog_schedule_at')  || {}).value || '';
 			if (!title.trim() || !content.trim()) { MM.toast('Title and content are required.', 'error'); return; }
 			if (status === 'future' && !scheduleAt) { MM.toast('Select a publish schedule date/time.', 'error'); return; }
+			const quality = evaluateBlogQuality();
+			if (quality.score < 60 && !confirm('Quality checks found major issues. Save anyway?')) { return; }
 			saveBtn.disabled = true;
 			saveBtn.textContent = '⏳ Saving…';
 			const res = await ajaxPost('mm_blog_save', {
@@ -2018,6 +2196,12 @@
 				MM.toast(msg, 'error');
 			}
 		});
+		['#mm_blog_preview_title', '#mm_blog_preview_content', '#mm_blog_preview_meta', '#mm_blog_keyword'].forEach((selector) => {
+			const el = $(selector);
+			if (!el) return;
+			el.addEventListener('input', evaluateBlogQuality);
+		});
+		evaluateBlogQuality();
 	};
 
 	// Bind Blogs tab + (re)bind SEO when those tabs are active

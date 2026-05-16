@@ -24,6 +24,9 @@ class Meesho_Master_Import {
 		add_action( 'wp_ajax_meesho_import_url', array( $this, 'ajax_import_url' ) );
 		add_action( 'wp_ajax_meesho_import_html', array( $this, 'ajax_import_html' ) );
 		add_action( 'wp_ajax_meesho_manual_sku', array( $this, 'ajax_manual_sku' ) );
+		add_action( 'wp_ajax_mm_import_queue_add', array( $this, 'ajax_import_queue_add' ) );
+		add_action( 'wp_ajax_mm_import_queue_status', array( $this, 'ajax_import_queue_status' ) );
+		add_action( 'wp_ajax_mm_import_queue_process', array( $this, 'ajax_import_queue_process' ) );
 		// Staged-product workflow (v6.2)
 		add_action( 'wp_ajax_mm_list_staged', array( $this, 'ajax_list_staged' ) );
 		add_action( 'wp_ajax_mm_get_staged', array( $this, 'ajax_get_staged' ) );
@@ -181,6 +184,252 @@ class Meesho_Master_Import {
 		} catch ( Exception $e ) {
 			wp_send_json_error( $e->getMessage() );
 		}
+	}
+
+	private function import_queue_option_key() {
+		return 'mm_import_queue';
+	}
+
+	private function get_import_queue() {
+		$queue = get_option( $this->import_queue_option_key(), array() );
+		return is_array( $queue ) ? array_values( $queue ) : array();
+	}
+
+	private function save_import_queue( $queue ) {
+		update_option( $this->import_queue_option_key(), array_values( $queue ), false );
+	}
+
+	private function queue_summary( $queue ) {
+		$summary = array(
+			'total'      => count( $queue ),
+			'pending'    => 0,
+			'processing' => 0,
+			'retry'      => 0,
+			'done'       => 0,
+			'failed'     => 0,
+			'duplicate'  => 0,
+		);
+		foreach ( (array) $queue as $item ) {
+			$status = sanitize_key( (string) ( $item['status'] ?? '' ) );
+			if ( isset( $summary[ $status ] ) ) {
+				$summary[ $status ]++;
+			}
+		}
+		return $summary;
+	}
+
+	private function log_import_failure( $context, $message, $payload = array() ) {
+		( new MM_Logger() )->log_before_change(
+			'import_failure',
+			'import',
+			0,
+			array(),
+			array(
+				'context' => sanitize_text_field( (string) $context ),
+				'error'   => sanitize_text_field( (string) $message ),
+				'data'    => is_array( $payload ) ? $payload : array(),
+			),
+			0,
+			'auto',
+			sanitize_textarea_field( (string) $context ),
+			0
+		);
+	}
+
+	private function queue_import_url( $url ) {
+		$url = esc_url_raw( (string) $url );
+		if ( '' === $url ) {
+			return false;
+		}
+		$queue = $this->get_import_queue();
+		foreach ( $queue as $item ) {
+			$existing_url = esc_url_raw( (string) ( $item['url'] ?? '' ) );
+			$status       = sanitize_key( (string) ( $item['status'] ?? '' ) );
+			if ( $existing_url === $url && in_array( $status, array( 'pending', 'processing', 'retry' ), true ) ) {
+				return false;
+			}
+		}
+		$max_id = 0;
+		foreach ( $queue as $item ) {
+			$max_id = max( $max_id, absint( $item['id'] ?? 0 ) );
+		}
+		$now = current_time( 'mysql' );
+		$queue[] = array(
+			'id'         => $max_id + 1,
+			'url'        => $url,
+			'status'     => 'pending',
+			'attempts'   => 0,
+			'last_error' => '',
+			'staged_id'  => 0,
+			'sku'        => '',
+			'title'      => '',
+			'created_at' => $now,
+			'updated_at' => $now,
+		);
+		$this->save_import_queue( $queue );
+		return true;
+	}
+
+	public function ajax_import_queue_add() {
+		meesho_master_verify_ajax_nonce();
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( 'Unauthorized' );
+		}
+		$raw_urls = wp_unslash( $_POST['urls'] ?? '' );
+		$parts = preg_split( '/[\r\n,]+/', (string) $raw_urls );
+		$added = 0;
+		$skipped = 0;
+		foreach ( (array) $parts as $part ) {
+			$url = trim( (string) $part );
+			if ( '' === $url ) {
+				continue;
+			}
+			if ( $this->queue_import_url( $url ) ) {
+				$added++;
+			} else {
+				$skipped++;
+			}
+		}
+		$queue = $this->get_import_queue();
+		wp_send_json_success(
+			array(
+				'added'   => $added,
+				'skipped' => $skipped,
+				'summary' => $this->queue_summary( $queue ),
+				'items'   => array_slice( array_reverse( $queue ), 0, 20 ),
+			)
+		);
+	}
+
+	public function ajax_import_queue_status() {
+		meesho_master_verify_ajax_nonce();
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( 'Unauthorized' );
+		}
+		$queue = $this->get_import_queue();
+		wp_send_json_success(
+			array(
+				'summary' => $this->queue_summary( $queue ),
+				'items'   => array_slice( array_reverse( $queue ), 0, 20 ),
+			)
+		);
+	}
+
+	private function process_queue_item( $item ) {
+		$url = esc_url_raw( (string) ( $item['url'] ?? '' ) );
+		if ( '' === $url ) {
+			throw new Exception( 'Missing queue URL.' );
+		}
+		if ( preg_match( '#/p/(\d+)#', $url, $mm ) ) {
+			$dupe = $this->check_duplicate( $mm[1] );
+			if ( $dupe ) {
+				return array(
+					'status'  => 'duplicate',
+					'message' => 'Already exists (SKU ' . $mm[1] . ').',
+					'sku'     => $mm[1],
+					'title'   => '',
+				);
+			}
+		}
+		$scraped = MM_Native_Scraper::fetch( $url );
+		if ( is_wp_error( $scraped ) ) {
+			$scrapling_url = $this->settings()->get( 'scrapling_url' );
+			if ( ! empty( $scrapling_url ) ) {
+				$scrapling = $this->fetch_from_scrapling( $url );
+				if ( ! is_wp_error( $scrapling ) ) {
+					$scraped = $scrapling;
+					$scraped['meesho_url'] = $url;
+				}
+			}
+		}
+		if ( is_wp_error( $scraped ) ) {
+			throw new Exception( 'Could not scrape: ' . $scraped->get_error_message() );
+		}
+		$scraped['meesho_url'] = $url;
+		$staged = $this->stage_product( $scraped );
+		return array(
+			'status'    => 'done',
+			'message'   => 'Staged successfully.',
+			'sku'       => sanitize_text_field( (string) ( $staged['sku'] ?? '' ) ),
+			'title'     => sanitize_text_field( (string) ( $staged['title'] ?? '' ) ),
+			'staged_id' => absint( $staged['staged_id'] ?? 0 ),
+		);
+	}
+
+	public function ajax_import_queue_process() {
+		meesho_master_verify_ajax_nonce();
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( 'Unauthorized' );
+		}
+		$requested_id = absint( $_POST['id'] ?? 0 );
+		$queue = $this->get_import_queue();
+		$index = null;
+		foreach ( $queue as $i => $item ) {
+			$status = sanitize_key( (string) ( $item['status'] ?? '' ) );
+			$item_id = absint( $item['id'] ?? 0 );
+			if ( $requested_id > 0 ) {
+				if ( $item_id === $requested_id ) {
+					$index = $i;
+					break;
+				}
+				continue;
+			}
+			if ( in_array( $status, array( 'pending', 'retry' ), true ) ) {
+				$index = $i;
+				break;
+			}
+		}
+		if ( null === $index ) {
+			wp_send_json_success(
+				array(
+					'processed' => false,
+					'done'      => true,
+					'summary'   => $this->queue_summary( $queue ),
+					'items'     => array_slice( array_reverse( $queue ), 0, 20 ),
+				)
+			);
+		}
+
+		$item = $queue[ $index ];
+		$item['status'] = 'processing';
+		$item['updated_at'] = current_time( 'mysql' );
+		$queue[ $index ] = $item;
+		$this->save_import_queue( $queue );
+
+		try {
+			$result = $this->process_queue_item( $item );
+			$item['status']     = sanitize_key( (string) ( $result['status'] ?? 'done' ) );
+			$item['last_error'] = '';
+			$item['sku']        = sanitize_text_field( (string) ( $result['sku'] ?? '' ) );
+			$item['title']      = sanitize_text_field( (string) ( $result['title'] ?? '' ) );
+			$item['staged_id']  = absint( $result['staged_id'] ?? 0 );
+		} catch ( Exception $e ) {
+			$item['attempts']   = absint( $item['attempts'] ?? 0 ) + 1;
+			$item['last_error'] = sanitize_text_field( $e->getMessage() );
+			$item['status']     = $item['attempts'] >= 3 ? 'failed' : 'retry';
+			$this->log_import_failure(
+				'import_queue_process',
+				$item['last_error'],
+				array(
+					'url'      => esc_url_raw( (string) ( $item['url'] ?? '' ) ),
+					'attempts' => (int) $item['attempts'],
+					'id'       => (int) ( $item['id'] ?? 0 ),
+				)
+			);
+		}
+
+		$item['updated_at'] = current_time( 'mysql' );
+		$queue[ $index ] = $item;
+		$this->save_import_queue( $queue );
+
+		wp_send_json_success(
+			array(
+				'processed' => true,
+				'item'      => $item,
+				'summary'   => $this->queue_summary( $queue ),
+				'items'     => array_slice( array_reverse( $queue ), 0, 20 ),
+			)
+		);
 	}
 
 	/* ================================================================

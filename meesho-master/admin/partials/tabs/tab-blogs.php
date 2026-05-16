@@ -102,6 +102,7 @@ $blog_model  = $settings->get( 'mm_openrouter_model_blog' );
 		<button class="mm-btn mm-btn-primary" id="mm_blog_generate_btn">✨ Generate Draft</button>
 		<button class="mm-btn mm-btn-outline" id="mm_blog_save_btn" style="display:none;">💾 Save Post</button>
 		<div id="mm_blog_status" class="mm-text-muted mm-mt-10" style="font-size:13px;"></div>
+		<div id="mm_blog_quality_report" class="mm-card mm-mt-10" style="background:#f8fafc;padding:12px;"></div>
 	</div>
 
 	<div class="mm-card">
