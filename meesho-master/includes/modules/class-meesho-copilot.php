@@ -24,6 +24,7 @@ public function __construct() {
 add_action( 'wp_ajax_mm_copilot_chat', array( $this, 'ajax_chat' ) );
 add_action( 'wp_ajax_mm_copilot_apply', array( $this, 'ajax_apply_action' ) );
 add_action( 'wp_ajax_mm_copilot_history', array( $this, 'ajax_get_history' ) );
+add_action( 'wp_ajax_mm_copilot_queue_state', array( $this, 'ajax_get_queue_state' ) );
 add_action( 'wp_ajax_mm_copilot_undo_last', array( $this, 'ajax_undo_last' ) );
 add_action( 'wp_ajax_mm_copilot_list_undo_history', array( $this, 'ajax_list_undo_history' ) );
 add_action( 'wp_ajax_mm_copilot_upload_file', array( $this, 'ajax_upload_file' ) );
@@ -113,22 +114,33 @@ $reply  = $this->scrub_secret_output( (string) ( $body['choices'][0]['message'][
 $actions = $this->extract_actions( $reply );
 $applied = array();
 $auto = 'yes' === $settings->get( 'mm_copilot_auto_implement', 'no' );
+$queue = $this->init_action_queue( $thread_key, $actions );
 foreach ( $actions as $action ) {
+	$action_key = $this->action_key( $action );
 // Hard denial: destructive actions always need confirmation
 if ( ! empty( $action['is_destructive'] ) ) {
 $action['requires_confirmation'] = true;
 }
 if ( $this->is_allowed_action( $action ) ) {
-if ( ! empty( $action['is_destructive'] ) ) {
+if ( ! empty( $action['is_destructive'] ) || $this->requires_explicit_approval( $action ) ) {
 // Never auto-apply destructive actions
+	$this->set_queue_state( $queue, $action_key, 'needs_approval', 'Requires explicit approval.' );
 } elseif ( $auto ) {
 $result = $this->execute_action( $action );
 if ( ! is_wp_error( $result ) ) {
 $applied[] = $action;
+	$this->set_queue_state( $queue, $action_key, 'applied', 'Auto-applied.' );
+} else {
+	$this->set_queue_state( $queue, $action_key, 'failed', $result->get_error_message() );
+}
+} else {
+	$this->set_queue_state( $queue, $action_key, 'pending', 'Waiting for manual approval.' );
+}
+} else {
+	$this->set_queue_state( $queue, $action_key, 'blocked', 'Action not allowed.' );
 }
 }
-}
-}
+$this->persist_action_queue( $thread_key, $queue );
 $this->persist_thread( $thread_key, $message, $reply, $applied );
 wp_send_json_success( array( 'reply' => $reply, 'actions' => $actions, 'auto_applied' => $applied, 'auto_implement' => $auto, 'thread_key' => $thread_key, 'timestamp' => wp_date( 'd/m/Y H:i' ) ) );
 }
@@ -303,10 +315,12 @@ return ( new Meesho_Master_SEO() )->apply_suggestion( absint( $params['suggestio
 			if ( preg_match( '/javascript:|expression\(|<script/i', $css ) ) {
 				return new WP_Error( 'unsafe', 'CSS contains unsafe content.' );
 			}
+			( new MM_Logger() )->log_before_change( 'copilot_edit', 'setting', 0, (string) get_option( 'mm_meesho_reviews_css', '' ), (string) $css, 0, $actor, 'reviews_css' );
 			update_option( 'mm_meesho_reviews_css', wp_strip_all_tags( $css ) );
 			return true;
 
 		case 'reset_reviews_css':
+			( new MM_Logger() )->log_before_change( 'copilot_edit', 'setting', 0, (string) get_option( 'mm_meesho_reviews_css', '' ), '', 0, $actor, 'reviews_css_reset' );
 			delete_option( 'mm_meesho_reviews_css' );
 			return true;
 
@@ -339,6 +353,7 @@ return ( new Meesho_Master_SEO() )->apply_suggestion( absint( $params['suggestio
 			if ( is_wp_error( $post_id ) ) {
 				return $post_id;
 			}
+			( new MM_Logger() )->log_before_change( 'copilot_edit', 'post', (int) $post_id, '', wp_json_encode( array( 'title' => $title, 'status' => $post_status ) ), 0, $actor, 'create_content' );
 			return array(
 				'created'   => true,
 				'post_id'   => $post_id,
@@ -461,15 +476,38 @@ meesho_master_verify_ajax_nonce();
 if ( ! current_user_can( 'manage_options' ) ) {
 wp_send_json_error( array( 'message' => 'Unauthorized' ), 403 );
 }
-$action = json_decode( wp_unslash( $_POST['action_data'] ?? '' ), true );
+$raw_action = wp_unslash( $_POST['action_data'] ?? ( $_POST['action'] ?? '' ) );
+$action = json_decode( $raw_action, true );
 if ( ! is_array( $action ) ) {
 wp_send_json_error( array( 'message' => 'Invalid action data' ), 400 );
 }
+$approved = ! empty( $_POST['approved'] );
+if ( $this->requires_explicit_approval( $action ) && ! $approved ) {
+wp_send_json_error( array( 'message' => 'Approval is required for this action.' ), 400 );
+}
+$thread_key = sanitize_key( wp_unslash( $_POST['thread_key'] ?? '' ) );
+$queue = $this->load_action_queue( $thread_key );
+$action_key = $this->action_key( $action );
+$this->set_queue_state( $queue, $action_key, 'applying', 'Applying action.' );
+$this->persist_action_queue( $thread_key, $queue );
 $result = $this->execute_action( $action );
 if ( is_wp_error( $result ) ) {
+$this->set_queue_state( $queue, $action_key, 'failed', $result->get_error_message() );
+$this->persist_action_queue( $thread_key, $queue );
 wp_send_json_error( array( 'message' => $result->get_error_message() ), 400 );
 }
+$this->set_queue_state( $queue, $action_key, 'applied', 'Applied manually.' );
+$this->persist_action_queue( $thread_key, $queue );
 wp_send_json_success( 'Action applied.' );
+}
+
+public function ajax_get_queue_state() {
+meesho_master_verify_ajax_nonce();
+if ( ! current_user_can( 'manage_options' ) ) {
+wp_send_json_error( array( 'message' => 'Unauthorized' ), 403 );
+}
+$thread_key = sanitize_key( wp_unslash( $_POST['thread_key'] ?? '' ) );
+wp_send_json_success( $this->load_action_queue( $thread_key ) );
 }
 
 public function ajax_get_history() {
@@ -579,5 +617,78 @@ wp_send_json_success( array(
 	'content'       => $content,
 	'is_image'      => in_array( $ext, array( 'jpg', 'jpeg', 'png', 'webp', 'gif' ), true ),
 ) );
+}
+
+private function requires_explicit_approval( $action ) {
+	$write_actions = array(
+		'publish_post', 'unpublish_post', 'update_post_title', 'update_post_content',
+		'update_product_price', 'update_product_stock', 'create_blog_post', 'create_landing_page',
+		'create_page', 'create_post', 'create_product_draft', 'update_reviews_css', 'reset_reviews_css',
+		'apply_seo_suggestion',
+	);
+	return in_array( (string) ( $action['action'] ?? '' ), $write_actions, true );
+}
+
+private function action_key( $action ) {
+	return hash( 'sha256', (string) wp_json_encode( $action ) );
+}
+
+private function queue_option_name( $thread_key ) {
+	return 'mm_copilot_queue_' . sanitize_key( (string) $thread_key );
+}
+
+private function load_action_queue( $thread_key ) {
+	if ( '' === (string) $thread_key ) {
+		return array();
+	}
+	$queue = get_option( $this->queue_option_name( $thread_key ), array() );
+	return is_array( $queue ) ? $queue : array();
+}
+
+private function init_action_queue( $thread_key, $actions ) {
+	if ( '' === (string) $thread_key ) {
+		return array();
+	}
+	$queue = $this->load_action_queue( $thread_key );
+	foreach ( (array) $actions as $a ) {
+		$key = $this->action_key( $a );
+		if ( empty( $queue[ $key ] ) ) {
+			$queue[ $key ] = array(
+				'action' => $a,
+				'state' => 'queued',
+				'note' => 'Queued from assistant response.',
+				'updated_at' => current_time( 'mysql' ),
+			);
+		}
+	}
+	return $queue;
+}
+
+private function set_queue_state( &$queue, $action_key, $state, $note = '' ) {
+	if ( ! is_array( $queue ) ) {
+		$queue = array();
+	}
+	if ( empty( $queue[ $action_key ] ) ) {
+		$queue[ $action_key ] = array(
+			'action' => array(),
+			'state' => 'queued',
+			'note' => '',
+			'updated_at' => current_time( 'mysql' ),
+		);
+	}
+	$queue[ $action_key ]['state'] = sanitize_key( $state );
+	$queue[ $action_key ]['note'] = sanitize_text_field( (string) $note );
+	$queue[ $action_key ]['updated_at'] = current_time( 'mysql' );
+}
+
+private function persist_action_queue( $thread_key, $queue ) {
+	if ( empty( $queue ) || ! is_array( $queue ) ) {
+		return;
+	}
+	$thread_key = sanitize_key( (string) $thread_key );
+	if ( '' === (string) $thread_key ) {
+		return;
+	}
+	update_option( $this->queue_option_name( $thread_key ), $queue, false );
 }
 }

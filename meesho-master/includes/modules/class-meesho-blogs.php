@@ -21,6 +21,44 @@ class Meesho_Master_Blogs {
 		return $s;
 	}
 
+	private function normalize_post_status( $status ) {
+		$status = sanitize_key( (string) $status );
+		$allowed = array( 'draft', 'pending', 'publish', 'future' );
+		if ( ! in_array( $status, $allowed, true ) ) {
+			return 'draft';
+		}
+		return $status;
+	}
+
+	private function parse_tags( $raw_tags ) {
+		$parts = array_filter( array_map( 'trim', explode( ',', (string) $raw_tags ) ) );
+		$tags = array();
+		foreach ( $parts as $tag ) {
+			$clean = sanitize_text_field( $tag );
+			if ( '' !== $clean ) {
+				$tags[] = $clean;
+			}
+		}
+		return array_values( array_unique( $tags ) );
+	}
+
+	private function maybe_attach_featured_image( $post_id, $image_url ) {
+		$image_url = esc_url_raw( (string) $image_url );
+		if ( '' === $image_url ) {
+			return;
+		}
+		$validated = wp_http_validate_url( $image_url );
+		if ( ! $validated ) {
+			return;
+		}
+		update_post_meta( $post_id, '_mm_featured_image_url', $validated );
+		$attachment_id = attachment_url_to_postid( $validated );
+		if ( $attachment_id ) {
+			set_post_thumbnail( $post_id, (int) $attachment_id );
+		}
+		// If the URL is external/not in Media Library, we keep URL meta only and skip thumbnail assignment.
+	}
+
 	/**
 	 * AJAX: generate a blog draft. Calls OpenRouter with master prompt
 	 * + default instructions + user inputs. Does NOT save — returns the
@@ -143,23 +181,48 @@ class Meesho_Master_Blogs {
 		if ( ! current_user_can( 'edit_posts' ) ) {
 			wp_send_json_error( array( 'message' => 'Unauthorized' ), 403 );
 		}
-		$title    = sanitize_text_field( wp_unslash( $_POST['title'] ?? '' ) );
-		$content  = wp_kses_post( wp_unslash( $_POST['content'] ?? '' ) );
-		$meta     = sanitize_text_field( wp_unslash( $_POST['meta_description'] ?? '' ) );
-		$category = absint( $_POST['category'] ?? 0 );
+		$title     = sanitize_text_field( wp_unslash( $_POST['title'] ?? '' ) );
+		$content   = wp_kses_post( wp_unslash( $_POST['content'] ?? '' ) );
+		$meta      = sanitize_text_field( wp_unslash( $_POST['meta_description'] ?? '' ) );
+		$category  = absint( $_POST['category'] ?? 0 );
+		$slug      = sanitize_title( wp_unslash( $_POST['slug'] ?? '' ) );
+		$status    = $this->normalize_post_status( wp_unslash( $_POST['status'] ?? 'draft' ) );
+		$tags      = $this->parse_tags( wp_unslash( $_POST['tags'] ?? '' ) );
+		$excerpt   = sanitize_textarea_field( wp_unslash( $_POST['excerpt'] ?? '' ) );
+		$featured  = wp_unslash( $_POST['featured_image'] ?? '' );
+		$schedule  = sanitize_text_field( wp_unslash( $_POST['schedule_at'] ?? '' ) );
+		$post_date = '';
 
 		if ( empty( $title ) || empty( $content ) ) {
 			wp_send_json_error( array( 'message' => 'Title and content required.' ) );
 		}
+		if ( 'future' === $status ) {
+			if ( empty( $schedule ) ) {
+				wp_send_json_error( array( 'message' => 'Schedule date/time is required for scheduled posts.' ) );
+			}
+			$timestamp = strtotime( $schedule );
+			if ( false === $timestamp || $timestamp <= 0 ) {
+				wp_send_json_error( array( 'message' => 'Invalid schedule date/time.' ) );
+			}
+			$post_date = gmdate( 'Y-m-d H:i:s', $timestamp );
+		}
 
-		$post_id = wp_insert_post( array(
+		$post_data = array(
 			'post_title'   => $title,
 			'post_content' => $content,
-			'post_status'  => 'draft',
+			'post_status'  => $status,
 			'post_type'    => 'post',
-			'post_excerpt' => $meta,
+			'post_excerpt' => $excerpt ? $excerpt : $meta,
 			'post_category' => $category ? array( $category ) : array(),
-		), true );
+			'tags_input'   => $tags,
+		);
+		if ( ! empty( $slug ) ) {
+			$post_data['post_name'] = $slug;
+		}
+		if ( 'future' === $status && ! empty( $post_date ) ) {
+			$post_data['post_date'] = $post_date;
+		}
+		$post_id = wp_insert_post( $post_data, true );
 
 		if ( is_wp_error( $post_id ) ) {
 			wp_send_json_error( array( 'message' => $post_id->get_error_message() ) );
@@ -184,11 +247,13 @@ class Meesho_Master_Blogs {
 			update_post_meta( $post_id, 'rank_math_description', $meta );     // RankMath
 			update_post_meta( $post_id, '_aioseo_description', $meta );       // AIOSEO
 		}
+		$this->maybe_attach_featured_image( $post_id, $featured );
 
 		wp_send_json_success( array(
 			'post_id'  => $post_id,
+			'post_status' => get_post_status( $post_id ),
 			'edit_url' => admin_url( 'post.php?post=' . $post_id . '&action=edit' ),
-			'message'  => 'Draft saved.',
+			'message'  => 'Post saved.',
 		) );
 	}
 

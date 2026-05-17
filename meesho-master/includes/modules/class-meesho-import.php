@@ -24,6 +24,9 @@ class Meesho_Master_Import {
 		add_action( 'wp_ajax_meesho_import_url', array( $this, 'ajax_import_url' ) );
 		add_action( 'wp_ajax_meesho_import_html', array( $this, 'ajax_import_html' ) );
 		add_action( 'wp_ajax_meesho_manual_sku', array( $this, 'ajax_manual_sku' ) );
+		add_action( 'wp_ajax_mm_import_queue_add', array( $this, 'ajax_import_queue_add' ) );
+		add_action( 'wp_ajax_mm_import_queue_status', array( $this, 'ajax_import_queue_status' ) );
+		add_action( 'wp_ajax_mm_import_queue_process', array( $this, 'ajax_import_queue_process' ) );
 		// Staged-product workflow (v6.2)
 		add_action( 'wp_ajax_mm_list_staged', array( $this, 'ajax_list_staged' ) );
 		add_action( 'wp_ajax_mm_get_staged', array( $this, 'ajax_get_staged' ) );
@@ -34,6 +37,7 @@ class Meesho_Master_Import {
 		add_action( 'wp_ajax_mm_optimize_description', array( $this, 'ajax_optimize_description' ) );
 		add_action( 'wp_ajax_mm_ai_generate_title', array( $this, 'ajax_generate_title' ) );
 		add_action( 'wp_ajax_mm_openrouter_models', array( $this, 'ajax_fetch_openrouter_models' ) );
+		add_action( 'wp_ajax_mm_get_wc_taxonomies', array( $this, 'ajax_get_wc_taxonomies' ) );
 	}
 
 	/**
@@ -182,6 +186,254 @@ class Meesho_Master_Import {
 		}
 	}
 
+	private function import_queue_option_key() {
+		return 'mm_import_queue';
+	}
+
+	private function get_import_queue() {
+		$queue = get_option( $this->import_queue_option_key(), array() );
+		return is_array( $queue ) ? array_values( $queue ) : array();
+	}
+
+	private function save_import_queue( $queue ) {
+		update_option( $this->import_queue_option_key(), array_values( $queue ), false );
+	}
+
+	private function queue_summary( $queue ) {
+		$summary = array(
+			'total'      => count( $queue ),
+			'pending'    => 0,
+			'processing' => 0,
+			'retry'      => 0,
+			'done'       => 0,
+			'failed'     => 0,
+			'duplicate'  => 0,
+		);
+		foreach ( (array) $queue as $item ) {
+			$status = sanitize_key( (string) ( $item['status'] ?? '' ) );
+			if ( isset( $summary[ $status ] ) ) {
+				$summary[ $status ]++;
+			}
+		}
+		return $summary;
+	}
+
+	private function log_import_failure( $context, $message, $payload = array() ) {
+		( new MM_Logger() )->log_before_change(
+			'import_failure',
+			'import',
+			0,
+			array(),
+			array(
+				'context' => sanitize_text_field( (string) $context ),
+				'error'   => sanitize_text_field( (string) $message ),
+				'data'    => is_array( $payload ) ? $payload : array(),
+			),
+			0,
+			'auto',
+			sanitize_textarea_field( (string) $context ),
+			0
+		);
+	}
+
+	private function queue_import_url( $url ) {
+		$url = esc_url_raw( (string) $url );
+		if ( '' === $url ) {
+			return false;
+		}
+		$queue = $this->get_import_queue();
+		foreach ( $queue as $item ) {
+			$existing_url = esc_url_raw( (string) ( $item['url'] ?? '' ) );
+			$status       = sanitize_key( (string) ( $item['status'] ?? '' ) );
+			if ( $existing_url === $url && in_array( $status, array( 'pending', 'processing', 'retry' ), true ) ) {
+				return false;
+			}
+		}
+		$max_id = 0;
+		foreach ( $queue as $item ) {
+			$max_id = max( $max_id, absint( $item['id'] ?? 0 ) );
+		}
+		$now = current_time( 'mysql' );
+		$queue[] = array(
+			'id'         => $max_id + 1,
+			'url'        => $url,
+			'status'     => 'pending',
+			'attempts'   => 0,
+			'last_error' => '',
+			'staged_id'  => 0,
+			'sku'        => '',
+			'title'      => '',
+			'created_at' => $now,
+			'updated_at' => $now,
+		);
+		$this->save_import_queue( $queue );
+		return true;
+	}
+
+	public function ajax_import_queue_add() {
+		meesho_master_verify_ajax_nonce();
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( 'Unauthorized' );
+		}
+		$raw_urls = wp_unslash( $_POST['urls'] ?? '' );
+		$parts = preg_split( '/[\r\n,]+/', (string) $raw_urls );
+		$added = 0;
+		$skipped = 0;
+		foreach ( (array) $parts as $part ) {
+			$url = trim( (string) $part );
+			if ( '' === $url ) {
+				continue;
+			}
+			if ( $this->queue_import_url( $url ) ) {
+				$added++;
+			} else {
+				$skipped++;
+			}
+		}
+		$queue = $this->get_import_queue();
+		wp_send_json_success(
+			array(
+				'added'   => $added,
+				'skipped' => $skipped,
+				'summary' => $this->queue_summary( $queue ),
+				'items'   => array_slice( array_reverse( $queue ), 0, 20 ),
+			)
+		);
+	}
+
+	public function ajax_import_queue_status() {
+		meesho_master_verify_ajax_nonce();
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( 'Unauthorized' );
+		}
+		$queue = $this->get_import_queue();
+		wp_send_json_success(
+			array(
+				'summary' => $this->queue_summary( $queue ),
+				'items'   => array_slice( array_reverse( $queue ), 0, 20 ),
+			)
+		);
+	}
+
+	private function process_queue_item( $item ) {
+		$url = esc_url_raw( (string) ( $item['url'] ?? '' ) );
+		if ( '' === $url ) {
+			throw new Exception( 'Missing queue URL.' );
+		}
+		if ( preg_match( '#/p/(\d+)#', $url, $mm ) ) {
+			$dupe = $this->check_duplicate( $mm[1] );
+			if ( $dupe ) {
+				return array(
+					'status'  => 'duplicate',
+					'message' => 'Already exists (SKU ' . $mm[1] . ').',
+					'sku'     => $mm[1],
+					'title'   => '',
+				);
+			}
+		}
+		$scraped = MM_Native_Scraper::fetch( $url );
+		if ( is_wp_error( $scraped ) ) {
+			$scrapling_url = $this->settings()->get( 'scrapling_url' );
+			if ( ! empty( $scrapling_url ) ) {
+				$scrapling = $this->fetch_from_scrapling( $url );
+				if ( ! is_wp_error( $scrapling ) ) {
+					$scraped = $scrapling;
+					$scraped['meesho_url'] = $url;
+				}
+			}
+		}
+		if ( is_wp_error( $scraped ) ) {
+			throw new Exception( 'Could not scrape: ' . $scraped->get_error_message() );
+		}
+		$scraped['meesho_url'] = $url;
+		$staged = $this->stage_product( $scraped );
+		return array(
+			'status'    => 'done',
+			'message'   => 'Staged successfully.',
+			'sku'       => sanitize_text_field( (string) ( $staged['sku'] ?? '' ) ),
+			'title'     => sanitize_text_field( (string) ( $staged['title'] ?? '' ) ),
+			'staged_id' => absint( $staged['staged_id'] ?? 0 ),
+		);
+	}
+
+	public function ajax_import_queue_process() {
+		meesho_master_verify_ajax_nonce();
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( 'Unauthorized' );
+		}
+		$requested_id = absint( $_POST['id'] ?? 0 );
+		$queue = $this->get_import_queue();
+		$index = null;
+		foreach ( $queue as $i => $item ) {
+			$status = sanitize_key( (string) ( $item['status'] ?? '' ) );
+			$item_id = absint( $item['id'] ?? 0 );
+			if ( $requested_id > 0 ) {
+				if ( $item_id === $requested_id ) {
+					$index = $i;
+					break;
+				}
+				continue;
+			}
+			if ( in_array( $status, array( 'pending', 'retry' ), true ) ) {
+				$index = $i;
+				break;
+			}
+		}
+		if ( null === $index ) {
+			wp_send_json_success(
+				array(
+					'processed' => false,
+					'done'      => true,
+					'summary'   => $this->queue_summary( $queue ),
+					'items'     => array_slice( array_reverse( $queue ), 0, 20 ),
+				)
+			);
+		}
+
+		$item = $queue[ $index ];
+		$item['status'] = 'processing';
+		$item['updated_at'] = current_time( 'mysql' );
+		$queue[ $index ] = $item;
+		$this->save_import_queue( $queue );
+
+		try {
+			$result = $this->process_queue_item( $item );
+			$item['status']     = sanitize_key( (string) ( $result['status'] ?? 'done' ) );
+			$item['last_error'] = '';
+			$item['sku']        = sanitize_text_field( (string) ( $result['sku'] ?? '' ) );
+			$item['title']      = sanitize_text_field( (string) ( $result['title'] ?? '' ) );
+			$item['staged_id']  = absint( $result['staged_id'] ?? 0 );
+		} catch ( Exception $e ) {
+			$retry_limit = (int) $this->settings()->get( 'mm_import_retry_limit', 3 );
+			$retry_limit = min( 10, max( 1, $retry_limit ) );
+			$item['attempts']   = absint( $item['attempts'] ?? 0 ) + 1;
+			$item['last_error'] = sanitize_text_field( $e->getMessage() );
+			$item['status']     = $item['attempts'] >= $retry_limit ? 'failed' : 'retry';
+			$this->log_import_failure(
+				'import_queue_process',
+				$item['last_error'],
+				array(
+					'url'      => esc_url_raw( (string) ( $item['url'] ?? '' ) ),
+					'attempts' => (int) $item['attempts'],
+					'id'       => (int) ( $item['id'] ?? 0 ),
+				)
+			);
+		}
+
+		$item['updated_at'] = current_time( 'mysql' );
+		$queue[ $index ] = $item;
+		$this->save_import_queue( $queue );
+
+		wp_send_json_success(
+			array(
+				'processed' => true,
+				'item'      => $item,
+				'summary'   => $this->queue_summary( $queue ),
+				'items'     => array_slice( array_reverse( $queue ), 0, 20 ),
+			)
+		);
+	}
+
 	/* ================================================================
 	 *  Scrapling service call
 	 * ================================================================ */
@@ -294,6 +546,17 @@ class Meesho_Master_Import {
 				}
 			}
 		}
+		$raw_images = is_array( $data['images'] ?? null ) ? $data['images'] : array();
+		$fallback_image = $this->sanitize_image_src( $data['image_url'] );
+		$sanitized_images = $this->sanitize_image_list( $raw_images );
+		if ( '' !== $fallback_image && ! in_array( $fallback_image, $sanitized_images, true ) ) {
+			array_unshift( $sanitized_images, $fallback_image );
+		}
+		if ( empty( $sanitized_images ) && '' !== $fallback_image ) {
+			$sanitized_images = array( $fallback_image );
+		}
+		$data['images'] = $sanitized_images;
+		$data['image_url'] = $data['images'][0] ?? '';
 
 		// Extract JSON-LD structured data (Meesho often embeds this)
 		$scripts = $xpath->query( '//script[@type="application/ld+json"]' );
@@ -409,11 +672,18 @@ class Meesho_Master_Import {
 			);
 		}
 
+		$validation_errors = $this->validate_import_data( $data, 'push' );
+		if ( ! empty( $validation_errors ) ) {
+			throw new Exception( 'Import validation failed: ' . implode( ' ', $validation_errors ) );
+		}
+
 		// Clean the description
 		$clean_desc = $this->clean_description( $data['description'] ?? '' );
 
 		// Create the parent WooCommerce variable product
 		$parent_id = $this->create_parent_product( $meesho_sku, $data, $clean_desc );
+
+		$this->apply_product_terms( $parent_id, $data );
 
 		// Create variations from sizes — Fix 2: sizes from scraped data only
 		if ( ! empty( $data['sizes'] ) && is_array( $data['sizes'] ) ) {
@@ -517,6 +787,18 @@ class Meesho_Master_Import {
 
 		// Also check our custom table
 		return false;
+	}
+
+	private function apply_product_terms( $parent_id, $data ) {
+		$categories = $this->sanitize_term_ids( $data['wc_categories'] ?? array() );
+		$tags       = $this->sanitize_term_ids( $data['wc_tags'] ?? array() );
+
+		if ( ! empty( $categories ) && taxonomy_exists( 'product_cat' ) ) {
+			wp_set_object_terms( $parent_id, $categories, 'product_cat', false );
+		}
+		if ( ! empty( $tags ) && taxonomy_exists( 'product_tag' ) ) {
+			wp_set_object_terms( $parent_id, $tags, 'product_tag', false );
+		}
 	}
 
 	/* ================================================================
@@ -645,6 +927,46 @@ class Meesho_Master_Import {
 	 *  Attach images
 	 * ================================================================ */
 
+	private function optimize_attachment_image( $attachment_id ) {
+		$file = get_attached_file( $attachment_id );
+		if ( empty( $file ) || ! file_exists( $file ) ) {
+			return;
+		}
+		$editor = wp_get_image_editor( $file );
+		if ( is_wp_error( $editor ) ) {
+			return;
+		}
+		$size = $editor->get_size();
+		$max  = 1600;
+		$did_resize = false;
+		if ( ! empty( $size['width'] ) && ! empty( $size['height'] ) ) {
+			if ( $size['width'] > $max || $size['height'] > $max ) {
+				$editor->resize( $max, $max, false );
+				$did_resize = true;
+			}
+		}
+
+		$should_optimize = $did_resize;
+		if ( ! $should_optimize && file_exists( $file ) ) {
+			$should_optimize = filesize( $file ) > 1500000;
+		}
+		if ( ! $should_optimize ) {
+			return;
+		}
+
+		if ( method_exists( $editor, 'set_quality' ) ) {
+			$editor->set_quality( 82 );
+		}
+		$saved = $editor->save( $file );
+		if ( is_wp_error( $saved ) ) {
+			return;
+		}
+		$meta = wp_generate_attachment_metadata( $attachment_id, $file );
+		if ( ! is_wp_error( $meta ) ) {
+			wp_update_attachment_metadata( $attachment_id, $meta );
+		}
+	}
+
 	private function attach_images( $parent_id, $images ) {
 		if ( ! function_exists( 'media_sideload_image' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/media.php';
@@ -652,10 +974,18 @@ class Meesho_Master_Import {
 			require_once ABSPATH . 'wp-admin/includes/image.php';
 		}
 
+		$images = $this->sanitize_image_list( $images );
+		if ( empty( $images ) ) {
+			return array();
+		}
+
+		$attachment_ids = array();
 		$gallery_ids = array();
 		foreach ( $images as $i => $url ) {
 			$attach_id = media_sideload_image( $url, $parent_id, '', 'id' );
 			if ( ! is_wp_error( $attach_id ) ) {
+				$attachment_ids[] = $attach_id;
+				$this->optimize_attachment_image( $attach_id );
 				if ( $i === 0 ) {
 					set_post_thumbnail( $parent_id, $attach_id );
 				} else {
@@ -667,6 +997,8 @@ class Meesho_Master_Import {
 		if ( ! empty( $gallery_ids ) ) {
 			update_post_meta( $parent_id, '_product_image_gallery', implode( ',', $gallery_ids ) );
 		}
+
+		return $attachment_ids;
 	}
 
 	/* ================================================================
@@ -699,6 +1031,7 @@ class Meesho_Master_Import {
 					$media_urls[] = $m['url'];
 				}
 			}
+			$media_urls = $this->sanitize_image_list( $media_urls );
 
 			$wpdb->insert(
 				$table,
@@ -747,6 +1080,7 @@ class Meesho_Master_Import {
 		$html = preg_replace( '/<script[^>]*>.*?<\/script>/is', '', $html );
 		$html = preg_replace( '/<style[^>]*>.*?<\/style>/is', '', $html );
 		$html = preg_replace( '/<noscript[^>]*>.*?<\/noscript>/is', '', $html );
+		$html = preg_replace( '/<!--.*?-->/s', '', $html );
 
 		$html = $this->format_description_plain_text( $html );
 
@@ -1143,6 +1477,9 @@ class Meesho_Master_Import {
 		}
 	}
 
+	/**
+	 * Validate image URLs (format + allowed protocols) and normalize to a safe URL string.
+	 */
 	private function sanitize_image_src( $src ) {
 		$src = trim( (string) $src );
 		if ( '' === $src ) {
@@ -1157,6 +1494,75 @@ class Meesho_Master_Import {
 			return '';
 		}
 		return $validated_url;
+	}
+
+	private function sanitize_image_list( $images ) {
+		$clean = array();
+		// Use an associative set for O(1) lookup during de-duplication on larger image lists.
+		$seen = array();
+		foreach ( (array) $images as $image ) {
+			if ( ! is_string( $image ) ) {
+				continue;
+			}
+			$url = $this->sanitize_image_src( $image );
+			if ( '' === $url || isset( $seen[ $url ] ) ) {
+				continue;
+			}
+			$seen[ $url ] = true;
+			$clean[] = $url;
+		}
+		return $clean;
+	}
+
+	private function sanitize_term_ids( $terms ) {
+		if ( is_string( $terms ) ) {
+			$terms = explode( ',', $terms );
+		}
+		if ( ! is_array( $terms ) ) {
+			return array();
+		}
+		$clean = array_map( 'absint', $terms );
+		return array_values( array_filter( $clean ) );
+	}
+
+	private function validate_import_data( $data, $context = 'stage' ) {
+		$errors = array();
+		$title  = trim( (string) ( $data['title'] ?? '' ) );
+		$desc   = trim( wp_strip_all_tags( (string) ( $data['description'] ?? '' ) ) );
+		$images = $this->sanitize_image_list( $data['images'] ?? array() );
+		$sizes  = $data['sizes'] ?? array();
+
+		if ( '' === $title ) {
+			$errors[] = 'Title is missing.';
+		}
+		if ( strlen( $desc ) < 20 ) {
+			$errors[] = 'Description is missing or too short.';
+		}
+		if ( empty( $images ) ) {
+			$errors[] = 'At least one valid image URL is required.';
+		}
+		if ( empty( $sizes ) || ! is_array( $sizes ) ) {
+			$errors[] = 'At least one size/variation is required.';
+		}
+
+		$has_price = floatval( $data['override_price'] ?? 0 ) > 0 || floatval( $data['price'] ?? 0 ) > 0;
+		if ( ! $has_price && is_array( $sizes ) ) {
+			foreach ( $sizes as $size ) {
+				if ( is_array( $size ) && floatval( $size['price'] ?? 0 ) > 0 ) {
+					$has_price = true;
+					break;
+				}
+			}
+		}
+		if ( ! $has_price ) {
+			$errors[] = 'Price is missing.';
+		}
+
+		if ( 'push' === $context && empty( $data['meesho_url'] ) ) {
+			$errors[] = 'Source URL is missing.';
+		}
+
+		return $errors;
 	}
 
 	/* ================================================================
@@ -1193,6 +1599,20 @@ class Meesho_Master_Import {
 		$dupe = $this->check_duplicate( $meesho_sku );
 		if ( $dupe ) {
 			throw new Exception( 'SKU ' . $meesho_sku . ' already exists. Delete from Products tab first to re-scrape.' );
+		}
+
+		$validation_errors = $this->validate_import_data( $data, 'stage' );
+		if ( ! empty( $validation_errors ) ) {
+			$data['validation_errors'] = $validation_errors;
+		}
+		if ( array_key_exists( 'images', $data ) ) {
+			$data['images'] = $this->sanitize_image_list( $data['images'] );
+		}
+		if ( array_key_exists( 'wc_categories', $data ) ) {
+			$data['wc_categories'] = $this->sanitize_term_ids( $data['wc_categories'] );
+		}
+		if ( array_key_exists( 'wc_tags', $data ) ) {
+			$data['wc_tags'] = $this->sanitize_term_ids( $data['wc_tags'] );
 		}
 
 		$table = MM_DB::table( 'products' );
@@ -1400,11 +1820,20 @@ class Meesho_Master_Import {
 			$data = array();
 		}
 		// Whitelisted editable fields
-		$allowed = array( 'title', 'description', 'price', 'mrp', 'brand', 'images', 'sizes', 'reviews', 'override_price', 'override_mrp', 'all_out_of_stock' );
+		$allowed = array( 'title', 'description', 'price', 'mrp', 'brand', 'images', 'sizes', 'reviews', 'override_price', 'override_mrp', 'all_out_of_stock', 'wc_categories', 'wc_tags' );
 		foreach ( $allowed as $k ) {
 			if ( array_key_exists( $k, $fields ) ) {
 				$data[ $k ] = $fields[ $k ];
 			}
+		}
+		if ( array_key_exists( 'images', $data ) ) {
+			$data['images'] = $this->sanitize_image_list( $data['images'] );
+		}
+		if ( array_key_exists( 'wc_categories', $data ) ) {
+			$data['wc_categories'] = $this->sanitize_term_ids( $data['wc_categories'] );
+		}
+		if ( array_key_exists( 'wc_tags', $data ) ) {
+			$data['wc_tags'] = $this->sanitize_term_ids( $data['wc_tags'] );
 		}
 		$wpdb->update(
 			$table,
@@ -1514,6 +1943,57 @@ class Meesho_Master_Import {
 		wp_send_json_success( array(
 			'duplicate'  => (bool) $existing,
 			'product_id' => $existing,
+		) );
+	}
+
+	public function ajax_get_wc_taxonomies() {
+		meesho_master_verify_ajax_nonce();
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( 'Unauthorized' );
+		}
+
+		$categories = array();
+		$tags       = array();
+
+		if ( taxonomy_exists( 'product_cat' ) ) {
+			$cat_terms = get_terms( array(
+				'taxonomy'   => 'product_cat',
+				'hide_empty' => false,
+				'orderby'    => 'name',
+				'order'      => 'ASC',
+			) );
+			if ( ! is_wp_error( $cat_terms ) ) {
+				foreach ( $cat_terms as $term ) {
+					$categories[] = array(
+						'id'   => (int) $term->term_id,
+						'name' => $term->name,
+						'slug' => $term->slug,
+					);
+				}
+			}
+		}
+
+		if ( taxonomy_exists( 'product_tag' ) ) {
+			$tag_terms = get_terms( array(
+				'taxonomy'   => 'product_tag',
+				'hide_empty' => false,
+				'orderby'    => 'name',
+				'order'      => 'ASC',
+			) );
+			if ( ! is_wp_error( $tag_terms ) ) {
+				foreach ( $tag_terms as $term ) {
+					$tags[] = array(
+						'id'   => (int) $term->term_id,
+						'name' => $term->name,
+						'slug' => $term->slug,
+					);
+				}
+			}
+		}
+
+		wp_send_json_success( array(
+			'categories' => $categories,
+			'tags'       => $tags,
 		) );
 	}
 
@@ -1693,10 +2173,12 @@ class Meesho_Master_Import {
 		}
 		$force = ! empty( $_POST['force'] );
 		$cache_key = 'mm_openrouter_models_v1';
+		$settings = new Meesho_Master_Settings();
+		$cache_ttl_hours = (int) $settings->get( 'mm_openrouter_models_cache_hours', 12 );
+		$cache_ttl_hours = min( 168, max( 1, $cache_ttl_hours ) );
 		if ( ! $force ) {
 			$cached = get_transient( $cache_key );
 			if ( is_array( $cached ) && ! empty( $cached ) ) {
-				$settings    = new Meesho_Master_Settings();
 				$assignments = array(
 					'seo'     => $settings->get( 'mm_openrouter_model_seo',     '' ),
 					'blog'    => $settings->get( 'mm_openrouter_model_blog',    '' ),
@@ -1737,8 +2219,7 @@ class Meesho_Master_Import {
 			}
 			return strcmp( $a['id'], $b['id'] );
 		} );
-		set_transient( $cache_key, $models, 12 * HOUR_IN_SECONDS );
-		$settings    = new Meesho_Master_Settings();
+		set_transient( $cache_key, $models, $cache_ttl_hours * HOUR_IN_SECONDS );
 		$assignments = array(
 			'seo'     => $settings->get( 'mm_openrouter_model_seo',     '' ),
 			'blog'    => $settings->get( 'mm_openrouter_model_blog',    '' ),

@@ -83,8 +83,12 @@ return new WP_Error( 'unsupported', 'Undo is not supported for this action type.
 
 public function purge_expired_snapshots() {
 global $wpdb;
+$settings = class_exists( 'Meesho_Master_Settings' ) ? new Meesho_Master_Settings() : null;
+$retention_days = $settings ? absint( $settings->get( 'mm_log_retention_days', 90 ) ) : 90;
+$retention_days = min( 365, max( 7, $retention_days ) );
 $wpdb->query( 'UPDATE ' . MM_DB::table( 'audit_log' ) . ' SET old_value = NULL, undoable = 0 WHERE purge_after IS NOT NULL AND purge_after < NOW()' );
-$wpdb->query( 'DELETE FROM ' . MM_DB::table( 'seo_score_history' ) . ' WHERE recorded_at < DATE_SUB(NOW(), INTERVAL 90 DAY)' );
+$wpdb->query( $wpdb->prepare( 'DELETE FROM ' . MM_DB::table( 'seo_score_history' ) . ' WHERE recorded_at < DATE_SUB(NOW(), INTERVAL %d DAY)', $retention_days ) );
+$wpdb->query( $wpdb->prepare( 'DELETE FROM ' . MM_DB::table( 'audit_log' ) . ' WHERE created_at < DATE_SUB(NOW(), INTERVAL %d DAY)', $retention_days ) );
 }
 
 public function ajax_undo() {
@@ -110,6 +114,9 @@ $where = array( '1=1' );
 $params = array();
 $action_type = sanitize_text_field( wp_unslash( $_POST['action_type'] ?? '' ) );
 $source      = sanitize_text_field( wp_unslash( $_POST['source'] ?? '' ) );
+$severity    = sanitize_key( wp_unslash( $_POST['severity'] ?? '' ) );
+$search      = sanitize_text_field( wp_unslash( $_POST['q'] ?? '' ) );
+$retention_days = absint( $_POST['retention_days'] ?? 0 );
 if ( '' !== $action_type ) {
 $where[]  = 'action_type = %s';
 $params[] = $action_type;
@@ -118,20 +125,84 @@ if ( '' !== $source ) {
 $where[]  = 'actor = %s';
 $params[] = $source;
 }
+$allowed_severity = array( '', 'low', 'medium', 'high' );
+if ( ! in_array( $severity, $allowed_severity, true ) ) {
+	$severity = '';
+}
+if ( '' !== $search ) {
+	$where[]  = '(action_type LIKE %s OR note LIKE %s OR CAST(target_id AS CHAR) LIKE %s)';
+	$like = '%' . $wpdb->esc_like( $search ) . '%';
+	$params[] = $like;
+	$params[] = $like;
+	$params[] = $like;
+}
+if ( $retention_days > 0 ) {
+	$where[]  = 'created_at >= DATE_SUB(NOW(), INTERVAL %d DAY)';
+	$params[] = $retention_days;
+}
 $page = max( 1, absint( $_POST['page'] ?? 1 ) );
-$params[] = 50;
-$params[] = ( $page - 1 ) * 50;
+$per_page = min( 200, max( 10, absint( $_POST['per_page'] ?? 50 ) ) );
+$params[] = $per_page;
+$params[] = ( $page - 1 ) * $per_page;
 $sql = "SELECT * FROM {$table} WHERE " . implode( ' AND ', $where ) . ' ORDER BY created_at DESC LIMIT %d OFFSET %d';
 $logs = $wpdb->get_results( $wpdb->prepare( $sql, ...$params ) );
+$filtered_logs = array();
 foreach ( $logs as $log ) {
 $log->post_id     = $log->target_id;
 $log->source      = $log->actor;
 $log->created_at  = mysql2date( 'd/m/Y H:i', $log->created_at );
+	$log->severity = $this->map_severity( $log->action_type );
+	if ( '' !== $severity && $log->severity !== $severity ) {
+		continue;
+	}
+	$filtered_logs[] = $log;
 }
 $total_params = array_slice( $params, 0, -2 );
 $total_sql = "SELECT COUNT(*) FROM {$table} WHERE " . implode( ' AND ', $where );
 $total = empty( $total_params ) ? (int) $wpdb->get_var( $total_sql ) : (int) $wpdb->get_var( $wpdb->prepare( $total_sql, ...$total_params ) );
-wp_send_json_success( array( 'logs' => $logs, 'total' => $total, 'page' => $page ) );
+if ( ! empty( $_POST['export'] ) ) {
+	$csv = array( 'id,created_at,severity,action_type,target_id,actor,note,undone' );
+	foreach ( $filtered_logs as $log ) {
+		$row = array(
+			(int) $log->id,
+			(string) $log->created_at,
+			(string) $log->severity,
+			(string) $log->action_type,
+			(int) $log->target_id,
+			(string) $log->actor,
+			str_replace( array( "\r", "\n" ), ' ', (string) $log->note ),
+			(int) $log->undone,
+		);
+		$csv[] = '"' . implode( '","', array_map( array( $this, 'escape_csv_value' ), $row ) ) . '"';
+	}
+	wp_send_json_success( array(
+		'export' => true,
+		'filename' => 'meesho-audit-logs.csv',
+		'csv' => implode( "\n", $csv ),
+		'total' => count( $filtered_logs ),
+	) );
+}
+wp_send_json_success( array( 'logs' => $filtered_logs, 'total' => $total, 'page' => $page ) );
+}
+
+private function map_severity( $action_type ) {
+	$action_type = sanitize_key( (string) $action_type );
+	if ( false !== strpos( $action_type, 'failure' ) || false !== strpos( $action_type, 'delete' ) ) {
+		return 'high';
+	}
+	if ( false !== strpos( $action_type, 'undo' ) || false !== strpos( $action_type, 'reject' ) ) {
+		return 'medium';
+	}
+	return 'low';
+}
+
+private function escape_csv_value( $value ) {
+	$value = (string) $value;
+	$value = str_replace( '"', '""', $value );
+	if ( '' !== $value && preg_match( '/^[=\+\-@]/', $value ) ) {
+		$value = "\t" . $value;
+	}
+	return $value;
 }
 }
 }

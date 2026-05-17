@@ -112,7 +112,289 @@
 		if (tab === 'products') MM.loadProducts && MM.loadProducts();
 		if (tab === 'seo') MM.loadSuggestions && MM.loadSuggestions();
 		if (tab === 'logs') MM.loadLogs && MM.loadLogs();
-		if (tab === 'analytics') MM.loadRankings && MM.loadRankings();
+		if (tab === 'analytics') {
+			MM.loadRankings && MM.loadRankings();
+			MM.loadAnalyticsIntegrations && MM.loadAnalyticsIntegrations();
+		}
+		if (tab === 'orders') MM.loadOrders && MM.loadOrders();
+	};
+
+	/* ============================================================
+	 * Orders tab
+	 * ============================================================ */
+	MM.orders = { page: 1, editing: null };
+
+	MM.loadOrders = function (page = 1) {
+		const tbody = $('#orders_table_body');
+		if (!tbody) return;
+		MM.orders.page = Math.max(1, parseInt(page, 10) || 1);
+		const status = ($('#order_status_filter') || {}).value || '';
+		const search = ($('#order_search') || {}).value || '';
+		tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:30px;" class="mm-text-muted">Loading orders...</td></tr>';
+		ajaxPost('meesho_get_orders', { page: MM.orders.page, status, search }).then((res) => {
+			if (!res.success) {
+				tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:30px;" class="mm-text-muted">Failed to load orders.</td></tr>';
+				return;
+			}
+			const orders = (res.data && res.data.orders) || [];
+			if (!orders.length) {
+				tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:30px;" class="mm-text-muted">No orders found.</td></tr>';
+				return;
+			}
+			const rows = orders.map((o) => {
+				const items = Array.isArray(o.items) ? o.items : [];
+				const itemHtml = items.length ? items.map((it) => {
+					const quickLink = it.source_url
+						? `<a href="${escapeHtml(it.source_url)}" target="_blank" class="mm-btn mm-btn-sm mm-btn-outline" style="padding:2px 6px;line-height:1.2;">🔗 Source</a>`
+						: '';
+					return `<div style="margin-bottom:6px;">
+						<div><strong>${escapeHtml(it.name || '')}</strong></div>
+						<div class="mm-text-muted" style="font-size:12px;">SKU: ${escapeHtml(it.sku || '—')} ${it.size ? ' | Size: ' + escapeHtml(it.size) : ''} | Qty: ${escapeHtml(it.qty || 1)}</div>
+						${quickLink}
+					</div>`;
+				}).join('') : '<span class="mm-text-muted">No line items</span>';
+				const rowStyle = o.sla_status === 'breached' ? ' style="background:#fff1f2;"' : '';
+				const riskBadge = o.cod_risk === 'high' ? '<span class="mm-badge mm-badge-danger">RISK</span>' : '';
+				return `<tr${rowStyle}>
+					<td><strong>#${escapeHtml(o.wc_order_id)}</strong><div class="mm-text-muted" style="font-size:12px;">${escapeHtml(o.created_at || '')}</div></td>
+					<td>${itemHtml}</td>
+					<td>
+						<div><strong>${escapeHtml(o.customer_name || '—')}</strong></div>
+						<div style="font-size:12px;">${escapeHtml(o.phone || '')}</div>
+						<div class="mm-text-muted" style="font-size:12px;">${escapeHtml((o.address || '').replace(/\s+/g, ' ').trim())}</div>
+					</td>
+					<td>
+						<div>${escapeHtml(o.payment_method || '—')} ${riskBadge}</div>
+						<div style="font-size:12px;" class="mm-text-muted">₹${escapeHtml(o.order_total || 0)}</div>
+					</td>
+					<td>
+						<div><strong>${escapeHtml(o.fulfillment_status || '')}</strong></div>
+						<div style="font-size:12px;" class="mm-text-muted">Meesho ID: ${escapeHtml(o.meesho_order_id || '—')}</div>
+						<div style="font-size:12px;" class="mm-text-muted">Tracking: ${escapeHtml(o.tracking_id || '—')}</div>
+					</td>
+					<td>${escapeHtml(o.account_used || '—')}</td>
+					<td>${o.sla_status === 'breached' ? '<span class="mm-badge mm-badge-danger">Breached</span>' : '<span class="mm-badge mm-badge-success">OK</span>'}</td>
+					<td style="white-space:nowrap;">
+						<button class="mm-btn mm-btn-sm mm-btn-outline" onclick="MeeshoMaster.openOrderEdit(${o.id})">✏️ Edit</button>
+						<button class="mm-btn mm-btn-sm mm-btn-outline" onclick="MeeshoMaster.checkCODRisk(${o.wc_order_id})">🛡 COD</button>
+					</td>
+				</tr>`;
+			});
+			tbody.innerHTML = rows.join('');
+		});
+	};
+
+	MM.openOrderEdit = function (id) {
+		const modal = $('#order-edit-modal');
+		if (!modal) return;
+		const rows = $$('#orders_table_body tr');
+		const target = rows.find((r) => r.querySelector('button[onclick*="openOrderEdit(' + id + ')"]'));
+		if (!target) return MM.toast('Order row not found. Refresh and try again.', 'error');
+		MM.orders.editing = id;
+		const getText = (selector) => {
+			const el = target.querySelector(selector);
+			return el ? el.textContent.trim() : '';
+		};
+		($('#oe-order-id') || {}).textContent = String(id);
+		($('#oe-meesho-id') || {}).value = (getText('td:nth-child(5) div:nth-child(2)').replace('Meesho ID: ', '').trim() || '');
+		($('#oe-tracking') || {}).value = (getText('td:nth-child(5) div:nth-child(3)').replace('Tracking: ', '').trim() || '');
+		($('#oe-status') || {}).value = (getText('td:nth-child(5) div:nth-child(1)').trim() || 'pending');
+		const accountVal = getText('td:nth-child(6)').trim();
+		const accountSelect = $('#oe-account');
+		if (accountSelect) {
+			ajaxPost('meesho_get_accounts').then((res) => {
+				const accounts = (res.success && Array.isArray(res.data)) ? res.data : [];
+				accountSelect.innerHTML = '<option value="">Select account...</option>' +
+					accounts.map((a, idx) => `<option value="${escapeHtml(a.id || idx + 1)}">${escapeHtml(a.name || ('Account ' + (idx + 1)))}</option>`).join('');
+				if (accountVal) {
+					const match = Array.from(accountSelect.options).find((o) => o.textContent.trim() === accountVal || String(o.value) === accountVal);
+					if (match) accountSelect.value = match.value;
+				}
+			});
+		}
+		modal.classList.add('active');
+	};
+
+	MM.submitOrderEdit = function () {
+		const orderId = MM.orders.editing;
+		if (!orderId) return MM.toast('No order selected.', 'error');
+		const payload = {
+			order_id: orderId,
+			fulfillment_status: ($('#oe-status') || {}).value || 'pending',
+			meesho_order_id: ($('#oe-meesho-id') || {}).value || '',
+			tracking_id: ($('#oe-tracking') || {}).value || '',
+			account_used: ($('#oe-account') || {}).value || '',
+			notes: ($('#oe-notes') || {}).value || '',
+		};
+		ajaxPost('meesho_update_order', payload).then((res) => {
+			if (!res.success) {
+				MM.toast((res.data && res.data.message) ? res.data.message : 'Update failed.', 'error');
+				return;
+			}
+			MM.toast('Order updated.', 'success');
+			const modal = $('#order-edit-modal');
+			if (modal) modal.classList.remove('active');
+			MM.orders.editing = null;
+			($('#oe-notes') || {}).value = '';
+			MM.loadOrders(MM.orders.page);
+		});
+	};
+
+	MM.checkCODRisk = function (wcOrderId) {
+		ajaxPost('meesho_check_cod_risk', { wc_order_id: wcOrderId }).then((res) => {
+			if (!res.success) {
+				return MM.toast((res.data && res.data.message) ? res.data.message : 'Risk check failed.', 'error');
+			}
+			const reasons = (res.data && res.data.reasons) || [];
+			if (!reasons.length) {
+				MM.toast('COD risk: low.', 'success');
+				return;
+			}
+			alert('High COD risk:\n\n- ' + reasons.join('\n- '));
+		});
+	};
+
+	MM.backfillOrders = function () {
+		if (!confirm('Backfill mm_orders from existing WooCommerce orders now?')) return;
+		MM.toast('Backfilling orders…', 'info');
+		ajaxPost('meesho_backfill_orders', { page: 1, limit: 200 }).then((res) => {
+			if (!res.success) {
+				return MM.toast((res.data && res.data.message) ? res.data.message : 'Backfill failed.', 'error');
+			}
+			const inserted = (res.data && res.data.inserted) || 0;
+			const scanned = (res.data && res.data.scanned) || 0;
+			const more = !!(res.data && res.data.has_more);
+			const suffix = more ? ' Run again to process the next batch.' : '';
+			MM.toast(`Backfill complete: ${inserted} inserted (${scanned} scanned).${suffix}`, 'success');
+			MM.loadOrders(1);
+		});
+	};
+
+	MM.loadOrderFailureLogs = function () {
+		const wrap = $('#order_failure_logs_wrap');
+		const body = $('#order_failure_logs_body');
+		if (!wrap || !body) return;
+		wrap.style.display = '';
+		body.innerHTML = '<tr><td colspan="4" class="mm-text-muted" style="text-align:center;padding:16px;">Loading failure logs…</td></tr>';
+		ajaxPost('mm_get_logs', { action_type: 'order_failure', source: 'auto', page: 1 }).then((res) => {
+			if (!res.success) {
+				body.innerHTML = '<tr><td colspan="4" class="mm-text-muted" style="text-align:center;padding:16px;">Failed to load failure logs.</td></tr>';
+				return;
+			}
+			const logs = (res.data && res.data.logs) || [];
+			if (!logs.length) {
+				body.innerHTML = '<tr><td colspan="4" class="mm-text-muted" style="text-align:center;padding:16px;">No order failures logged yet.</td></tr>';
+				return;
+			}
+			body.innerHTML = logs.map((log) => {
+				let details = '';
+				if (log.new_value) {
+					try {
+						const parsed = JSON.parse(log.new_value);
+						details = parsed.error || parsed.context || '';
+					} catch (e) {
+						details = String(log.new_value).slice(0, 180);
+					}
+				}
+				return `<tr>
+					<td>${escapeHtml(log.created_at || '')}</td>
+					<td>${escapeHtml(log.note || '')}</td>
+					<td style="max-width:180px;word-break:break-word;">${escapeHtml(details || '—')}</td>
+					<td style="max-width:240px;word-break:break-all;">${escapeHtml(log.actor || 'auto')}</td>
+				</tr>`;
+			}).join('');
+		});
+	};
+
+	MM.toggleOrderFailureLogs = function () {
+		const wrap = $('#order_failure_logs_wrap');
+		if (!wrap) return;
+		if (wrap.style.display === 'none' || !wrap.style.display) {
+			MM.loadOrderFailureLogs();
+		} else {
+			wrap.style.display = 'none';
+		}
+	};
+
+	MM.exportOrdersCsv = async function () {
+		const pageLimit = 200;
+		const csvEscape = (value) => {
+			const str = value == null ? '' : String(value);
+			const escaped = str.replace(/"/g, '""');
+			if (/[",\n\r]/.test(escaped)) return `"${escaped}"`;
+			return escaped;
+		};
+		let page = 1;
+		let total = 0;
+		let orders = [];
+		while (true) {
+			const res = await ajaxPost('meesho_get_orders', { page, limit: pageLimit, status: '', search: '' });
+			if (!res.success) return MM.toast('Export failed.', 'error');
+			const batch = (res.data && res.data.orders) || [];
+			total = (res.data && res.data.total) || batch.length;
+			orders = orders.concat(batch);
+			if (!batch.length || orders.length >= total) break;
+			page += 1;
+		}
+		if (!orders.length) return MM.toast('No orders to export.', 'info');
+		const lines = ['wc_order_id,meesho_order_id,tracking_id,status,payment,total,customer,phone,created_at'];
+		orders.forEach((o) => {
+			lines.push([
+				csvEscape(o.wc_order_id || ''),
+				csvEscape(o.meesho_order_id || ''),
+				csvEscape(o.tracking_id || ''),
+				csvEscape(o.fulfillment_status || ''),
+				csvEscape(o.payment_method || ''),
+				csvEscape(o.order_total || 0),
+				csvEscape(o.customer_name || ''),
+				csvEscape(o.phone || ''),
+				csvEscape(o.created_at || ''),
+			].join(','));
+		});
+		const a = document.createElement('a');
+		a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(lines.join('\n'));
+		a.download = 'meesho-orders.csv';
+		a.click();
+		MM.toast(`Exported ${orders.length} orders.`, 'success');
+	};
+
+	MM.taxonomies = { loaded: false, loading: null, categories: [], tags: [] };
+
+	const renderTermOptions = (terms, selected) => {
+		const selectedSet = new Set((selected || []).map((id) => String(id)));
+		if (!Array.isArray(terms) || !terms.length) {
+			return '<option value="">No terms found</option>';
+		}
+		return terms.map((t) => {
+			const isSelected = selectedSet.has(String(t.id));
+			return `<option value="${escapeHtml(t.id)}" ${isSelected ? 'selected' : ''}>${escapeHtml(t.name)}</option>`;
+		}).join('');
+	};
+
+	const readMultiSelectValues = (el) => {
+		if (!el) return [];
+		return Array.from(el.selectedOptions || []).map((o) => parseInt(o.value, 10)).filter((v) => v);
+	};
+
+	MM.loadTaxonomies = function () {
+		if (MM.taxonomies.loaded) {
+			return Promise.resolve(MM.taxonomies);
+		}
+		if (MM.taxonomies.loading) {
+			return MM.taxonomies.loading;
+		}
+		MM.taxonomies.loading = ajaxPost('mm_get_wc_taxonomies').then((res) => {
+			if (res && res.success && res.data) {
+				MM.taxonomies.categories = res.data.categories || [];
+				MM.taxonomies.tags = res.data.tags || [];
+				MM.taxonomies.loaded = true;
+			} else {
+				MM.taxonomies.categories = [];
+				MM.taxonomies.tags = [];
+			}
+			return MM.taxonomies;
+		});
+		return MM.taxonomies.loading;
 	};
 
 	/* ============================================================
@@ -123,6 +405,90 @@
 		const btnHtml = $('#btn_import_html');
 		const btnManual = $('#btn_manual_sku');
 		const out = $('#import_results');
+		const queueUrls = $('#mm_import_queue_urls');
+		const queueAddBtn = $('#mm_import_queue_add_btn');
+		const queueProcessBtn = $('#mm_import_queue_process_btn');
+		const queueRefreshBtn = $('#mm_import_queue_refresh_btn');
+		const queueStatus = $('#mm_import_queue_status');
+		const queueList = $('#mm_import_queue_list');
+
+		const renderQueue = (payload) => {
+			if (!queueStatus || !queueList) return;
+			const summary = (payload && payload.summary) || {};
+			const items = (payload && payload.items) || [];
+			queueStatus.textContent =
+				`Total ${summary.total || 0} · Pending ${summary.pending || 0} · Processing ${summary.processing || 0} · Retry ${summary.retry || 0} · Done ${summary.done || 0} · Failed ${summary.failed || 0} · Duplicate ${summary.duplicate || 0}`;
+			if (!items.length) {
+				queueList.innerHTML = '<p class="mm-text-muted">Queue is empty.</p>';
+				return;
+			}
+			queueList.innerHTML = '<table class="mm-table"><thead><tr><th>ID</th><th>URL</th><th>Status</th><th>Attempts</th><th>Last error</th></tr></thead><tbody>' +
+				items.map((it) => `<tr>
+					<td>${escapeHtml(it.id || '')}</td>
+					<td style="max-width:360px;word-break:break-all;">${escapeHtml(it.url || '')}</td>
+					<td>${escapeHtml(it.status || '')}</td>
+					<td>${escapeHtml(it.attempts || 0)}</td>
+					<td style="max-width:280px;word-break:break-word;">${escapeHtml(it.last_error || '')}</td>
+				</tr>`).join('') +
+				'</tbody></table>';
+		};
+
+		const refreshQueue = () => {
+			if (!queueStatus || !queueList) return;
+			queueStatus.textContent = 'Loading queue…';
+			ajaxPost('mm_import_queue_status').then((res) => {
+				if (!res.success) {
+					queueStatus.textContent = 'Failed to load queue status.';
+					return;
+				}
+				renderQueue(res.data || {});
+			});
+		};
+
+		if (queueAddBtn) {
+			queueAddBtn.addEventListener('click', () => {
+				const urls = (queueUrls && queueUrls.value) ? queueUrls.value : '';
+				if (!urls.trim()) return MM.toast('Add at least one URL to queue.', 'error');
+				queueAddBtn.disabled = true;
+				ajaxPost('mm_import_queue_add', { urls }).then((res) => {
+					queueAddBtn.disabled = false;
+					if (!res.success) return MM.toast('Failed to add queue items.', 'error');
+					if (queueUrls) queueUrls.value = '';
+					MM.toast(`Queue updated: ${res.data.added || 0} added, ${res.data.skipped || 0} skipped.`, 'success');
+					renderQueue(res.data || {});
+				});
+			});
+		}
+
+		if (queueProcessBtn) {
+			queueProcessBtn.addEventListener('click', () => {
+				queueProcessBtn.disabled = true;
+				queueProcessBtn.textContent = '⏳ Processing…';
+				ajaxPost('mm_import_queue_process').then((res) => {
+					queueProcessBtn.disabled = false;
+					queueProcessBtn.textContent = '▶ Process Next';
+					if (!res.success) {
+						MM.toast('Queue processing failed.', 'error');
+						return;
+					}
+					if (res.data && res.data.done) {
+						MM.toast('Queue complete. No pending items.', 'info');
+					} else {
+						const item = (res.data && res.data.item) || {};
+						MM.toast(`Processed #${item.id || ''}: ${item.status || 'done'}`, item.status === 'failed' ? 'error' : 'success');
+					}
+					renderQueue(res.data || {});
+					setTimeout(() => MM.bindImportTab && MM.bindImportTab(), 500);
+				});
+			});
+		}
+
+		if (queueRefreshBtn) {
+			queueRefreshBtn.addEventListener('click', refreshQueue);
+		}
+		if (queueStatus && queueList) {
+			refreshQueue();
+		}
 
 		// Load recent staged products preview (v6.5 — full-card layout)
 		const recentGrid = $('#mm_import_recent_grid');
@@ -361,12 +727,14 @@
 		if (!panel || !content) return;
 		panel.classList.remove('mm-hidden');
 		content.innerHTML = '<p class="mm-text-muted" style="grid-column:span 2;">Loading…</p>';
-		ajaxPost('mm_get_staged', { id: safeId }).then((res) => {
+		Promise.all([ajaxPost('mm_get_staged', { id: safeId }), MM.loadTaxonomies()]).then(([res]) => {
 			if (!res.success) { content.innerHTML = '<p>Load failed.</p>'; return; }
 			MM.products.current = res.data;
 			const d = res.data.data || {};
 			const reviews = (d.reviews || []).slice(0, 20);
 			const variationRows = normalizeVariationRows(d.sizes || [], res.data.sku || '');
+			const categoryOptions = renderTermOptions(MM.taxonomies.categories, d.wc_categories || []);
+			const tagOptions = renderTermOptions(MM.taxonomies.tags, d.wc_tags || []);
 			const reviewsHtml = reviews.length ? reviews.map((r) => `
 				<div class="mm-edit-review" data-mm-review-row="${safeId}">
 					<div class="mm-edit-review-header">
@@ -416,6 +784,13 @@
 							<input type="number" step="0.01" class="mm-input" id="mm_field_op_${safeId}" value="${escapeHtml(d.override_price || '')}" placeholder="Calculated: ₹${escapeHtml(res.data.our_price || d.price || 0)} — leave blank to use markup rules">
 							<input type="number" step="0.01" class="mm-input" id="mm_field_om_${safeId}" value="${escapeHtml(d.override_mrp || '')}" placeholder="Override MRP">
 						</div>
+					</div>
+					<div class="mm-card" style="background:#f8fafc;padding:10px;margin-top:10px;">
+						<label class="mm-label">🏷 WooCommerce Categories</label>
+						<select multiple id="mm_field_categories_${safeId}" class="mm-input mm-select" size="5">${categoryOptions}</select>
+						<label class="mm-label mm-mt-10">🏷 WooCommerce Tags</label>
+						<select multiple id="mm_field_tags_${safeId}" class="mm-input mm-select" size="5">${tagOptions}</select>
+						<div class="mm-text-muted" style="font-size:11px;margin-top:6px;">Hold Ctrl/Cmd to select multiple.</div>
 					</div>
 					<label class="mm-label mm-mt-10">Description (HTML — same for all variations)</label>
 					<textarea class="mm-textarea" id="mm_field_desc_${safeId}" rows="6">${escapeHtml(d.description || '')}</textarea>
@@ -505,6 +880,8 @@
 			override_price: parseFloat(($(`#mm_field_op_${id}`) || {}).value) || 0,
 			override_mrp: parseFloat(($(`#mm_field_om_${id}`) || {}).value) || 0,
 			all_out_of_stock: !!(($(`#mm_field_all_oos_${id}`) || {}).checked),
+			wc_categories: readMultiSelectValues($(`#mm_field_categories_${id}`)),
+			wc_tags: readMultiSelectValues($(`#mm_field_tags_${id}`)),
 		};
 		const status = $(`#mm_panel_status_${id}`);
 		if (status) status.textContent = '⏳ Saving…';
@@ -836,19 +1213,23 @@
 	MM.loadLogs = function () {
 		const tbody = $('#logs_table_body');
 		if (!tbody) return;
-		tbody.innerHTML = '<tr><td colspan="6" class="mm-text-muted" style="text-align:center;padding:20px;">Loading…</td></tr>';
+		tbody.innerHTML = '<tr><td colspan="7" class="mm-text-muted" style="text-align:center;padding:20px;">Loading…</td></tr>';
 		const actionType = ($('#log_type_filter') || {}).value || '';
 		const source     = ($('#log_source_filter') || {}).value || '';
-		ajaxPost('mm_get_logs', { action_type: actionType, source: source }).then((res) => {
-			if (!res.success) { tbody.innerHTML = '<tr><td colspan="6" class="mm-text-muted">Failed to load logs.</td></tr>'; return; }
+		const severity   = ($('#log_severity_filter') || {}).value || '';
+		const q          = ($('#log_search_filter') || {}).value || '';
+		const retention  = ($('#log_retention_filter') || {}).value || '0';
+		ajaxPost('mm_get_logs', { action_type: actionType, source: source, severity, q, retention_days: retention }).then((res) => {
+			if (!res.success) { tbody.innerHTML = '<tr><td colspan="7" class="mm-text-muted">Failed to load logs.</td></tr>'; return; }
 			const rows = (res.data && res.data.logs) || [];
-			if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" class="mm-text-muted" style="text-align:center;padding:20px;">No logs found.</td></tr>'; return; }
+			if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="mm-text-muted" style="text-align:center;padding:20px;">No logs found.</td></tr>'; return; }
 			tbody.innerHTML = rows.map((r) => {
 				const postTitle = r.target_id ? `#${r.target_id}` : '—';
 				const changes = (r.note || (r.new_value ? r.new_value.substring(0, 80) : '—'));
 				const canUndo = r.undoable == '1' && r.undone != '1';
 				return `<tr>
 					<td>${escapeHtml(r.created_at || '')}</td>
+					<td><span class="mm-badge mm-badge-${r.severity === 'high' ? 'danger' : (r.severity === 'medium' ? 'info' : 'success')}">${escapeHtml(r.severity || 'low')}</span></td>
 					<td>${escapeHtml(r.action_type || '')}</td>
 					<td>${escapeHtml(postTitle)}</td>
 					<td>${escapeHtml(r.actor || r.source || '')}</td>
@@ -857,6 +1238,23 @@
 				</tr>`;
 			}).join('');
 		});
+	};
+
+	MM.exportLogsCsv = function () {
+		const actionType = ($('#log_type_filter') || {}).value || '';
+		const source     = ($('#log_source_filter') || {}).value || '';
+		const severity   = ($('#log_severity_filter') || {}).value || '';
+		const q          = ($('#log_search_filter') || {}).value || '';
+		const retention  = ($('#log_retention_filter') || {}).value || '0';
+		ajaxPost('mm_get_logs', { action_type: actionType, source: source, severity, q, retention_days: retention, export: 1, per_page: 200 })
+			.then((res) => {
+				if (!res.success || !res.data || !res.data.csv) return MM.toast('Export failed.', 'error');
+				const a = document.createElement('a');
+				a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(res.data.csv);
+				a.download = res.data.filename || 'meesho-audit-logs.csv';
+				a.click();
+				MM.toast('Logs exported.', 'success');
+			});
 	};
 
 	/* ============================================================
@@ -868,20 +1266,51 @@
 		tbody.innerHTML = '<tr><td colspan="6" class="mm-text-muted" style="text-align:center;padding:20px;">Loading…</td></tr>';
 		ajaxPost('mm_get_rankings').then((res) => {
 			if (!res.success) { tbody.innerHTML = '<tr><td colspan="6" class="mm-text-muted">No data.</td></tr>'; return; }
-			const rows = res.data || [];
+			const rows = (res.data && Array.isArray(res.data.rows)) ? res.data.rows : (Array.isArray(res.data) ? res.data : []);
 			if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" class="mm-text-muted" style="text-align:center;padding:20px;">No rankings yet. Configure GSC in Settings.</td></tr>'; return; }
 			tbody.innerHTML = rows.map((r) =>
-				`<tr><td>${escapeHtml(r.keyword)}</td><td>${escapeHtml(r.page || '')}</td><td>${escapeHtml(r.position || '')}</td><td>${escapeHtml(r.delta || '')}</td><td>${escapeHtml(r.impressions || '')}</td><td>${escapeHtml(r.ctr || '')}</td></tr>`
+				`<tr><td>${escapeHtml(r.keyword)}</td><td>${escapeHtml(r.page_url || r.page || '')}</td><td>${escapeHtml(r.position || '')}</td><td>${escapeHtml(r.delta || '—')}</td><td>${escapeHtml(r.impressions || '')}</td><td>${escapeHtml(r.ctr || '')}</td></tr>`
 			).join('');
 		});
 	};
 
-	MM.addKeyword = function () {
+	MM.addKeyword = function (forceRefresh = false) {
 		const input = $('#new_keyword');
 		if (!input || !input.value.trim()) return MM.toast('Enter a keyword.', 'error');
-		ajaxPost('mm_add_keyword', { keyword: input.value.trim() }).then((res) => {
+		ajaxPost('mm_add_keyword', { keyword: input.value.trim(), force_refresh: forceRefresh ? 1 : 0 }).then((res) => {
 			if (res.success) { input.value = ''; MM.loadRankings(); }
 			else MM.toast('Failed.', 'error');
+		});
+	};
+
+	MM.loadAnalyticsIntegrations = function () {
+		const wrap = $('#mm_integrations_status');
+		if (!wrap) return;
+		wrap.innerHTML = '<p class="mm-text-muted">Loading integration status…</p>';
+		ajaxPost('mm_get_integration_status').then((res) => {
+			if (!res.success) {
+				wrap.innerHTML = '<p class="mm-text-muted">Failed to load integration status.</p>';
+				return;
+			}
+			const data = res.data || {};
+			const available = data.available || {};
+			const wc = data.woocommerce || {};
+			const rows = [
+				['WooCommerce', available.woocommerce ? 'Connected' : 'Not detected'],
+				['Google Site Kit', available.site_kit ? 'Connected' : 'Not detected'],
+				['RankMath', available.rankmath ? 'Connected' : 'Not detected'],
+				['Google Search Console', data.gsc && data.gsc.available ? 'Configured' : 'Not configured'],
+				['GA4', data.ga4 && data.ga4.available ? 'Configured' : 'Not configured'],
+				['Meta', data.meta && data.meta.available ? 'Connected' : 'Not detected'],
+			];
+			wrap.innerHTML = `<div class="mm-card" style="padding:0;overflow:auto;">
+				<table class="mm-table">
+					<thead><tr><th>Integration</th><th>Status</th><th>Details</th></tr></thead>
+					<tbody>
+						${rows.map((r) => `<tr><td>${escapeHtml(r[0])}</td><td>${escapeHtml(r[1])}</td><td>${escapeHtml(r[0] === 'WooCommerce' ? ('Orders 30d: ' + (wc.orders_last_30d || 0) + ', Revenue 30d: ' + (wc.revenue_last_30d || 0)) : '—')}</td></tr>`).join('')}
+					</tbody>
+				</table>
+			</div>`;
 		});
 	};
 
@@ -963,6 +1392,19 @@
 				`<button class="mm-btn mm-btn-sm mm-btn-outline mm-mt-10" onclick="MeeshoMaster.applyCopilotAction(${escapeHtml(JSON.stringify(JSON.stringify(a)))})">Apply: ${escapeHtml(a.action || 'action')}</button>`
 			).join(' ');
 			MM.appendCopilotMessage('bot', escapeHtml(res.data.reply || '').replace(/\n/g, '<br>') + actionsHtml);
+			if (currentCopilotThread) {
+				ajaxPost('mm_copilot_queue_state', { thread_key: currentCopilotThread }).then((qs) => {
+					if (!qs.success) return;
+					const list = Object.values(qs.data || {});
+					if (!list.length) return;
+					const counts = list.reduce((acc, item) => {
+						const k = item.state || 'queued';
+						acc[k] = (acc[k] || 0) + 1;
+						return acc;
+					}, {});
+					MM.appendCopilotMessage('bot', `<em>Queue:</em> pending ${counts.pending || 0}, approval ${counts.needs_approval || 0}, applied ${counts.applied || 0}, failed ${counts.failed || 0}.`);
+				});
+			}
 		});
 	};
 
@@ -999,7 +1441,7 @@
 	MM.applyCopilotAction = function (actionJsonString) {
 		let action;
 		try { action = JSON.parse(actionJsonString); } catch (e) { return MM.toast('Bad action data.', 'error'); }
-		ajaxPost('mm_copilot_apply', { action: JSON.stringify(action) }).then((res) => {
+		ajaxPost('mm_copilot_apply', { action_data: JSON.stringify(action), approved: 1, thread_key: currentCopilotThread || '' }).then((res) => {
 			MM.toast(res.success ? 'Applied.' : 'Failed.', res.success ? 'success' : 'error');
 		});
 	};
@@ -1036,6 +1478,8 @@
 		if ($('#suggestions_tbody')) MM.loadSuggestions();
 		// Logs tab auto-load
 		if ($('#logs_table_body')) MM.loadLogs();
+		// Orders tab auto-load
+		if ($('#orders_table_body')) MM.loadOrders();
 		// Settings — OpenRouter button (supports both old and new IDs)
 		const orBtn = $('#mm_refresh_or_models') || $('#btn_refresh_openrouter_models');
 		if (orBtn) orBtn.addEventListener('click', () => MM.refreshOpenRouterModels(true));
@@ -1325,6 +1769,27 @@
 					</tbody></table>`;
 			});
 		});
+		const ga4ForceBtn = $('#btn_load_ga4_force');
+		if (ga4ForceBtn) ga4ForceBtn.addEventListener('click', () => {
+			const range = ($('#ga4_range') || {}).value || '30';
+			ajaxPost('mm_fetch_ga4_data', { range, force_refresh: 1 }).then((res) => {
+				if (!res.success) return MM.toast((res.data && res.data.message) ? res.data.message : 'Force refresh failed.', 'error');
+				MM.toast('GA4 cache refreshed.', 'success');
+				const btn = $('#btn_load_ga4');
+				if (btn) btn.click();
+			});
+		});
+		const addKeywordBtn = $('#btn_add_keyword');
+		if (addKeywordBtn) addKeywordBtn.addEventListener('click', () => MM.addKeyword(false));
+		const refreshRankingsBtn = $('#btn_refresh_rankings');
+		if (refreshRankingsBtn) refreshRankingsBtn.addEventListener('click', () => {
+			const input = $('#new_keyword');
+			if (input && input.value && input.value.trim()) return MM.addKeyword(true);
+			MM.loadRankings();
+		});
+		const refreshIntegrationsBtn = $('#btn_refresh_integrations');
+		if (refreshIntegrationsBtn) refreshIntegrationsBtn.addEventListener('click', MM.loadAnalyticsIntegrations);
+		if ($('#mm_integrations_status')) MM.loadAnalyticsIntegrations();
 
 		// E2 — GA4 mode toggle in settings tab
 		const ga4Radios = $$('input[name="mm_ga4_mode"]');
@@ -1633,6 +2098,71 @@
 		const saveBtn     = $('#mm_blog_save_btn');
 		const statusEl    = $('#mm_blog_status');
 		const draftsEl    = $('#mm_blog_drafts');
+		const postStatusEl = $('#mm_blog_status_select');
+		const scheduleWrapEl = $('#mm_blog_schedule_wrap');
+		const scheduleInputEl = $('#mm_blog_schedule_at');
+		const qualityEl = $('#mm_blog_quality_report');
+		const saveBtnDefault = saveBtn ? saveBtn.textContent : '💾 Save Post';
+		// 3s keeps feedback lively without flickering while waiting for AI responses.
+		const statusUpdateIntervalMs = 3000;
+		const minBlogWordCountTarget = 600;
+		const minWordCountPenalty = 20;
+		const evaluateBlogQuality = () => {
+			const title = (($('#mm_blog_preview_title') || {}).value || '').trim();
+			const content = (($('#mm_blog_preview_content') || {}).value || '').trim();
+			const meta = (($('#mm_blog_preview_meta') || {}).value || '').trim();
+			const keyword = (($('#mm_blog_keyword') || {}).value || '').trim().toLowerCase();
+			const plainContent = content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+			const wordCount = plainContent ? plainContent.split(' ').length : 0;
+			let score = 100;
+			const issues = [];
+			if (title.length < 30 || title.length > 65) {
+				score -= 15;
+				issues.push('Title should ideally be 30–65 characters.');
+			}
+			if (!keyword) {
+				score -= 10;
+				issues.push('Primary keyword is missing.');
+			} else if (title.toLowerCase().indexOf(keyword) === -1) {
+				score -= 10;
+				issues.push('Primary keyword is not present in title.');
+			}
+			if (wordCount < minBlogWordCountTarget) {
+				score -= minWordCountPenalty;
+				issues.push(`Content is short; target at least ~${minBlogWordCountTarget} words for stronger SEO/AEO coverage.`);
+			}
+			if (!/<h2[\s>]/i.test(content)) {
+				score -= 10;
+				issues.push('Missing H2 headings for structure.');
+			}
+			if (!/<ul[\s>]|<ol[\s>]/i.test(content)) {
+				score -= 10;
+				issues.push('No list detected; consider adding concise bullet points.');
+			}
+			if (meta.length < 120 || meta.length > 160) {
+				score -= 10;
+				issues.push('Meta description should be ~120–160 characters.');
+			}
+			score = Math.max(0, score);
+			if (qualityEl) {
+				const badge = score >= 80 ? 'mm-badge-success' : (score >= 60 ? 'mm-badge-warning' : 'mm-badge-danger');
+				qualityEl.innerHTML = `<div><strong>Quality score:</strong> <span class="mm-badge ${badge}">${score}/100</span> <span class="mm-text-muted">(SEO/GEO/AIO checks)</span></div>` +
+					(issues.length ? `<ul style="margin:8px 0 0 16px;">${issues.map((i) => `<li>${escapeHtml(i)}</li>`).join('')}</ul>` : '<div class="mm-text-muted" style="margin-top:6px;">No major issues found.</div>');
+			}
+			return { score, issues };
+		};
+
+		const syncScheduleVisibility = () => {
+			if (!scheduleWrapEl || !postStatusEl) return;
+			scheduleWrapEl.style.display = postStatusEl.value === 'future' ? '' : 'none';
+			if (postStatusEl.value !== 'future' && scheduleInputEl) {
+				scheduleInputEl.value = '';
+			}
+		};
+		syncScheduleVisibility();
+		if (postStatusEl) {
+			postStatusEl.addEventListener('change', syncScheduleVisibility);
+		}
 
 		const loadDrafts = () => {
 			if (!draftsEl) return;
@@ -1679,9 +2209,24 @@
 			if (!topic.trim()) { MM.toast('Enter a topic first.', 'error'); return; }
 			generateBtn.disabled = true;
 			generateBtn.textContent = '⏳ Generating (30–90s)…';
-			if (statusEl) statusEl.textContent = '⏳ Calling AI… please wait.';
+			let statusTimer = null;
+			if (statusEl) {
+				const steps = [
+					'⏳ Calling AI… please wait.',
+					'🧠 Building outline and headings…',
+					'✍️ Drafting content and formatting HTML…',
+					'🔎 Finalizing SEO metadata…',
+				];
+				let idx = 0;
+				statusEl.textContent = steps[idx];
+				statusTimer = setInterval(() => {
+					idx = Math.min(idx + 1, steps.length - 1);
+					statusEl.textContent = steps[idx];
+				}, statusUpdateIntervalMs);
+			}
 			if (saveBtn) saveBtn.style.display = 'none';
 			const res = await ajaxPost('mm_blog_generate', { topic, keyword, length, tone, extra, category: cat });
+			if (statusTimer) clearInterval(statusTimer);
 			generateBtn.disabled = false;
 			generateBtn.textContent = '✨ Generate Draft';
 			if (!res.success) {
@@ -1696,9 +2241,10 @@
 			if (titleEl)   titleEl.value   = res.data.title   || topic;
 			if (contentEl) contentEl.value = res.data.content || '';
 			if (metaEl)    metaEl.value    = res.data.meta_description || '';
-			if (statusEl) statusEl.textContent = `✅ Draft generated using ${escapeHtml(res.data.model || 'AI')}. Edit if needed, then click Save as Draft.`;
+			if (statusEl) statusEl.textContent = `✅ Draft generated using ${escapeHtml(res.data.model || 'AI')}. Edit if needed, then click Save Post.`;
 			if (saveBtn) saveBtn.style.display = '';
 			MM.toast('Blog draft generated! Review and save.', 'success');
+			evaluateBlogQuality();
 		});
 
 		if (saveBtn) saveBtn.addEventListener('click', async () => {
@@ -1706,21 +2252,48 @@
 			const content = ($('#mm_blog_preview_content') || {}).value || '';
 			const meta    = ($('#mm_blog_preview_meta')    || {}).value || '';
 			const cat     = ($('#mm_blog_category')        || {}).value || '';
+			const slug    = ($('#mm_blog_slug')            || {}).value || '';
+			const status  = ($('#mm_blog_status_select')   || {}).value || 'draft';
+			const tags    = ($('#mm_blog_tags')            || {}).value || '';
+			const featuredImage = ($('#mm_blog_featured_image') || {}).value || '';
+			const excerpt = ($('#mm_blog_excerpt')         || {}).value || '';
+			const scheduleAt = ($('#mm_blog_schedule_at')  || {}).value || '';
 			if (!title.trim() || !content.trim()) { MM.toast('Title and content are required.', 'error'); return; }
+			if (status === 'future' && !scheduleAt) { MM.toast('Select a publish schedule date/time.', 'error'); return; }
+			const quality = evaluateBlogQuality();
+			if (quality.score < 60 && !confirm('Quality checks found major issues. Save anyway?')) { return; }
 			saveBtn.disabled = true;
 			saveBtn.textContent = '⏳ Saving…';
-			const res = await ajaxPost('mm_blog_save', { title, content, meta_description: meta, category: cat });
+			const res = await ajaxPost('mm_blog_save', {
+				title,
+				content,
+				meta_description: meta,
+				category: cat,
+				slug,
+				status,
+				tags,
+				featured_image: featuredImage,
+				excerpt,
+				schedule_at: scheduleAt,
+			});
 			saveBtn.disabled = false;
-			saveBtn.textContent = '💾 Save as Draft';
+			saveBtn.textContent = saveBtnDefault;
 			if (res.success) {
-				MM.toast('✅ Draft saved!', 'success');
-				if (statusEl) statusEl.innerHTML = `✅ Saved as draft. <a href="${escapeHtml(res.data.edit_url || '#')}" target="_blank">Edit in WordPress ↗</a>`;
+				MM.toast('✅ Post saved!', 'success');
+				const statusLabel = escapeHtml((res.data && res.data.post_status) || status);
+				if (statusEl) statusEl.innerHTML = `✅ Saved (${statusLabel}). <a href="${escapeHtml(res.data.edit_url || '#')}" target="_blank">Edit in WordPress ↗</a>`;
 				loadDrafts();
 			} else {
 				const msg = (res.data && res.data.message) ? res.data.message : 'Save failed.';
 				MM.toast(msg, 'error');
 			}
 		});
+		['#mm_blog_preview_title', '#mm_blog_preview_content', '#mm_blog_preview_meta', '#mm_blog_keyword'].forEach((selector) => {
+			const el = $(selector);
+			if (!el) return;
+			el.addEventListener('input', evaluateBlogQuality);
+		});
+		evaluateBlogQuality();
 	};
 
 	// Bind Blogs tab + (re)bind SEO when those tabs are active

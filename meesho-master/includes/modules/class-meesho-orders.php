@@ -16,6 +16,7 @@ add_action( 'wp_ajax_meesho_get_orders', array( $this, 'ajax_get_orders' ) );
 add_action( 'wp_ajax_meesho_update_order', array( $this, 'ajax_update_order' ) );
 add_action( 'wp_ajax_meesho_check_cod_risk', array( $this, 'ajax_check_cod_risk' ) );
 add_action( 'wp_ajax_meesho_get_accounts', array( $this, 'ajax_get_accounts' ) );
+add_action( 'wp_ajax_meesho_backfill_orders', array( $this, 'ajax_backfill_orders' ) );
 add_action( 'woocommerce_new_order', array( $this, 'on_new_wc_order' ), 10, 1 );
 }
 
@@ -49,6 +50,79 @@ $this->assess_cod_risk( $order );
 }
 }
 
+private function find_source_url_by_sku( $sku ) {
+static $cache = array();
+$sku = sanitize_text_field( (string) $sku );
+if ( '' === $sku ) {
+return '';
+}
+if ( isset( $cache[ $sku ] ) ) {
+return $cache[ $sku ];
+}
+
+global $wpdb;
+$sku_variants = array( $sku );
+if ( false !== strpos( $sku, '-' ) ) {
+$parts = explode( '-', $sku );
+if ( ! empty( $parts ) && '' !== trim( (string) $parts[0] ) ) {
+$sku_variants[] = trim( (string) $parts[0] );
+}
+}
+$sku_variants = array_values( array_unique( array_filter( $sku_variants ) ) );
+
+$source_url = '';
+foreach ( $sku_variants as $candidate ) {
+$source_url = (string) $wpdb->get_var( $wpdb->prepare(
+"SELECT meesho_url FROM " . MM_DB::table( 'products' ) . " WHERE meesho_sku = %s AND meesho_url <> '' ORDER BY id DESC LIMIT 1",
+$candidate
+) );
+if ( '' !== $source_url ) {
+break;
+}
+}
+$cache[ $sku ] = esc_url_raw( $source_url );
+return $cache[ $sku ];
+}
+
+private function sync_wc_order_to_mm_orders( $order_id ) {
+global $wpdb;
+$table = MM_DB::table( 'orders' );
+$exists = (int) $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE wc_order_id = %d", $order_id ) );
+if ( $exists ) {
+return false;
+}
+$wpdb->insert(
+$table,
+array(
+'wc_order_id'        => (int) $order_id,
+'fulfillment_status' => self::STATUS_PENDING,
+'created_at'         => current_time( 'mysql' ),
+'updated_at'         => current_time( 'mysql' ),
+),
+array( '%d', '%s', '%s', '%s' )
+);
+return (bool) $wpdb->insert_id;
+}
+
+private function log_order_failure( $wc_order_id, $context, $message, $payload = array() ) {
+$logger = new MM_Logger();
+$logger->log_before_change(
+'order_failure',
+'order',
+absint( $wc_order_id ),
+array(),
+array(
+'context' => sanitize_text_field( (string) $context ),
+'error'   => sanitize_text_field( (string) $message ),
+'data'    => is_array( $payload ) ? $payload : array(),
+),
+0,
+'auto',
+sanitize_textarea_field( (string) $context ),
+0
+);
+}
+
 public function ajax_get_orders() {
 meesho_master_verify_ajax_nonce();
 if ( ! current_user_can( 'manage_options' ) ) {
@@ -57,7 +131,7 @@ wp_send_json_error( array( 'message' => 'Unauthorized' ), 403 );
 global $wpdb;
 $table  = MM_DB::table( 'orders' );
 $page   = max( 1, absint( $_POST['page'] ?? 1 ) );
-$limit  = 25;
+$limit  = max( 1, min( 500, absint( $_POST['limit'] ?? 25 ) ) );
 $offset = ( $page - 1 ) * $limit;
 $where = array( '1=1' );
 $params = array();
@@ -104,17 +178,73 @@ $order['cod_risk']      = $row->cod_risk_flag ? 'high' : 'low';
 $order['items']         = array();
 foreach ( $wc_order->get_items() as $item ) {
 $product = $item->get_product();
+$item_sku = $product ? $product->get_sku() : '';
+$source_url = '';
+if ( $product ) {
+$source_url = esc_url_raw( (string) $product->get_meta( '_meesho_source_url', true ) );
+}
+if ( '' === $source_url && '' !== $item_sku ) {
+$source_url = $this->find_source_url_by_sku( $item_sku );
+}
 $order['items'][] = array(
 'name' => $item->get_name(),
-'sku'  => $product ? $product->get_sku() : '',
+'sku'  => $item_sku,
 'size' => $item->get_meta( 'pa_size' ) ?: $item->get_meta( 'size' ) ?: '',
 'qty'  => $item->get_quantity(),
+'source_url' => $source_url,
 );
 }
 }
 $orders[] = $order;
 }
 wp_send_json_success( array( 'orders' => $orders, 'total' => $total, 'page' => $page ) );
+}
+
+public function ajax_backfill_orders() {
+meesho_master_verify_ajax_nonce();
+if ( ! current_user_can( 'manage_options' ) ) {
+wp_send_json_error( array( 'message' => 'Unauthorized' ), 403 );
+}
+global $wpdb;
+$posts = $wpdb->posts;
+$page = max( 1, absint( $_POST['page'] ?? 1 ) );
+$limit = max( 1, min( 500, absint( $_POST['limit'] ?? 200 ) ) );
+$offset = ( $page - 1 ) * $limit;
+$shop_order_types = array( 'shop_order', 'shop_order_placehold' );
+$placeholders = implode( ',', array_fill( 0, count( $shop_order_types ), '%s' ) );
+$query = "SELECT ID FROM {$posts} WHERE post_type IN ({$placeholders}) AND post_status NOT IN ('trash','auto-draft') ORDER BY ID DESC LIMIT %d OFFSET %d";
+$query_params = array_merge( $shop_order_types, array( $limit, $offset ) );
+$order_ids = $wpdb->get_col( $wpdb->prepare( $query, ...$query_params ) );
+
+$inserted = 0;
+$failed = array();
+foreach ( (array) $order_ids as $order_id ) {
+$order_id = absint( $order_id );
+if ( ! $order_id ) {
+continue;
+}
+if ( $this->sync_wc_order_to_mm_orders( $order_id ) ) {
+$inserted++;
+$order = wc_get_order( $order_id );
+if ( $order && 'cod' === $order->get_payment_method() ) {
+$this->assess_cod_risk( $order );
+}
+} elseif ( null !== $wpdb->last_error && '' !== $wpdb->last_error ) {
+$failed[] = array( 'order_id' => $order_id, 'error' => $wpdb->last_error );
+$this->log_order_failure( $order_id, 'backfill_insert', $wpdb->last_error, array( 'page' => $page, 'limit' => $limit ) );
+}
+}
+
+wp_send_json_success(
+array(
+'inserted' => $inserted,
+'scanned'  => count( (array) $order_ids ),
+'page'     => $page,
+'limit'    => $limit,
+'has_more' => count( (array) $order_ids ) === $limit,
+'failed'   => $failed,
+)
+);
 }
 
 public function ajax_update_order() {
@@ -142,7 +272,11 @@ if ( '' !== $notes ) {
 $update['notes'] = trim( (string) $row->notes . "\n[" . wp_date( 'd/m/Y H:i' ) . '] ' . $notes );
 }
 ( new MM_Logger() )->log_before_change( 'order_update', 'order', (int) $row->wc_order_id, (array) $row, $update, 0, 'manual' );
-$wpdb->update( $table, $update, array( 'id' => $order_id ) );
+$updated = $wpdb->update( $table, $update, array( 'id' => $order_id ) );
+if ( false === $updated ) {
+$this->log_order_failure( (int) $row->wc_order_id, 'manual_update', (string) $wpdb->last_error, array( 'order_id' => $order_id ) );
+wp_send_json_error( array( 'message' => 'Failed to update order.' ), 500 );
+}
 wp_send_json_success( 'Order updated.' );
 }
 

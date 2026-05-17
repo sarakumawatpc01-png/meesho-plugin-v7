@@ -40,6 +40,22 @@
 	</div>
 </div>
 
+<div class="mm-card">
+	<h3>🧵 Import Queue (Batch URLs)</h3>
+	<p class="mm-text-muted">Queue multiple Meesho product URLs, then process them one-by-one with retry tracking and failure logging.</p>
+	<div class="mm-form-row">
+		<label class="mm-label">Queue URLs (one per line)</label>
+		<textarea id="mm_import_queue_urls" class="mm-textarea" rows="4" placeholder="https://www.meesho.com/.../p/123456&#10;https://www.meesho.com/.../p/234567"></textarea>
+	</div>
+	<div class="mm-flex mm-gap-10">
+		<button class="mm-btn mm-btn-outline" id="mm_import_queue_add_btn">➕ Add to Queue</button>
+		<button class="mm-btn mm-btn-primary" id="mm_import_queue_process_btn">▶ Process Next</button>
+		<button class="mm-btn mm-btn-outline" id="mm_import_queue_refresh_btn">🔄 Refresh Queue</button>
+	</div>
+	<div id="mm_import_queue_status" class="mm-text-muted mm-mt-10"></div>
+	<div id="mm_import_queue_list" class="mm-mt-10"></div>
+</div>
+
 <div class="mm-card mm-hidden" id="manual_sku_section">
 	<h3>⚠️ Manual SKU Entry</h3>
 	<p class="mm-text-muted">SKU could not be extracted. Enter the numeric product number from the image URL.</p>
@@ -60,26 +76,3 @@
 		<p class="mm-text-muted">Loading…</p>
 	</div>
 </div>
-
-<style>
-.mm-recent-card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:18px;margin-bottom:14px;display:grid;grid-template-columns:180px 1fr;gap:18px}
-.mm-recent-thumb{width:180px;height:180px;object-fit:cover;border-radius:8px;background:#f1f5f9;border:1px solid #e2e8f0}
-.mm-recent-info h4{margin:0;font-size:18px;color:#0f172a;font-weight:700}
-.mm-recent-link{color:#9F2089;font-size:12px;text-decoration:underline;display:block;margin:4px 0 12px;word-break:break-all}
-.mm-recent-row{display:flex;gap:18px;font-size:13px;color:#475569;align-items:center;margin-bottom:6px;flex-wrap:wrap}
-.mm-recent-row strong{color:#0f172a}
-.mm-recent-row .mm-row-price-our{color:#10b981;font-weight:700}
-.mm-recent-rating{display:inline-flex;align-items:center;gap:3px}
-.mm-recent-rating .star{color:#f59e0b}
-.mm-recent-actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
-.mm-recent-images-strip{margin-top:14px}
-.mm-recent-images-strip h5{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 6px;font-weight:600}
-.mm-recent-images-strip-grid{display:flex;gap:8px;flex-wrap:wrap}
-.mm-recent-images-strip-grid img{width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #e2e8f0;background:#f1f5f9}
-.mm-recent-reviews-strip{margin-top:14px}
-.mm-recent-reviews-strip h5{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 6px;font-weight:600}
-.mm-recent-review{padding:10px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:6px;background:#fafbfc;font-size:13px}
-.mm-recent-review-meta{display:flex;gap:10px;font-size:11px;color:#94a3b8;margin-bottom:4px}
-.mm-recent-review-meta strong{color:#0f172a;font-size:12px}
-@media (max-width:768px){.mm-recent-card{grid-template-columns:1fr}}
-</style>

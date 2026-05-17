@@ -18,6 +18,7 @@ add_action( 'wp_ajax_mm_list_targetable_posts', array( $this, 'ajax_list_targeta
 // v6.5 — flat handlers for new dashboard JS
 add_action( 'wp_ajax_mm_seo_list_scores', array( $this, 'ajax_list_scores' ) );
 add_action( 'wp_ajax_mm_seo_score_trends', array( $this, 'ajax_score_trends' ) );
+add_action( 'wp_ajax_mm_seo_monitoring_dashboard', array( $this, 'ajax_monitoring_dashboard' ) );
 add_action( 'mm_seo_run_morning', array( $this, 'run_scheduled_batch' ) );
 add_action( 'mm_seo_run_evening', array( $this, 'run_scheduled_batch' ) );
 add_action( 'admin_notices', array( $this, 'maybe_render_stale_run_notice' ) );
@@ -196,7 +197,7 @@ $error_log[] = sprintf( 'Post %d: %s', $post_id, $suggestions->get_error_message
 break;
 }
 
-$stored = $this->store_suggestions( $post_id, $suggestions, $scores );
+$stored = $this->store_suggestions( $post_id, $suggestions, $scores, $run_id );
 $created += count( $stored );
 
 foreach ( $stored as $suggestion ) {
@@ -298,62 +299,81 @@ update_post_meta( $post_id, '_meesho_aeo_score', (int) $scores['aeo'] );
 update_post_meta( $post_id, '_meesho_geo_score', (int) $scores['geo'] );
 }
 
-private function store_suggestions( $post_id, $suggestions, $scores ) {
+private function store_suggestions( $post_id, $suggestions, $scores, $run_id = 0 ) {
 global $wpdb;
 $table  = MM_DB::table( 'seo_suggestions' );
 $stored = array();
 $types  = array();
 foreach ( $suggestions as $suggestion ) {
-$type = sanitize_text_field( $suggestion['type'] ?? '' );
+$type = $this->normalize_suggestion_type( $suggestion['type'] ?? '' );
 if ( '' === $type ) {
 continue;
 }
 $types[] = $type;
+$suggested_value = wp_kses_post( (string) ( $suggestion['suggested_value'] ?? '' ) );
+if ( '' === trim( wp_strip_all_tags( $suggested_value ) ) ) {
+	continue;
+}
+if ( $this->has_pending_suggestion( $table, $post_id, $type, $suggested_value ) ) {
+	continue;
+}
 $payload = array(
 'post_id'         => $post_id,
-'type'            => $type,
-'current_value'   => (string) ( $suggestion['current_value'] ?? '' ),
-'suggested_value' => (string) ( $suggestion['suggested_value'] ?? '' ),
+'suggestion_type' => $type,
+'current_value'   => wp_kses_post( (string) ( $suggestion['current_value'] ?? '' ) ),
+'suggested_value' => $suggested_value,
 'reasoning'       => sanitize_textarea_field( $suggestion['reasoning'] ?? '' ),
-'priority'        => sanitize_text_field( $suggestion['priority'] ?? 'low' ),
+'priority'        => $this->normalize_priority( $suggestion['priority'] ?? 'medium' ),
 'confidence'      => max( 0, min( 100, (int) ( $suggestion['confidence'] ?? 0 ) ) ),
 'safe_to_apply'   => ! empty( $suggestion['safe_to_apply'] ) ? 1 : 0,
 'status'          => 'pending',
+'seo_score'       => (int) ( $scores['seo'] ?? 0 ),
+'aeo_score'       => (int) ( $scores['aeo'] ?? 0 ),
+'geo_score'       => (int) ( $scores['geo'] ?? 0 ),
+'run_id'          => (int) $run_id,
 'created_at'      => current_time( 'mysql' ),
 );
-$wpdb->insert( $table, $payload, array( '%d', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s' ) );
+$wpdb->insert( $table, $payload, array( '%d', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%d', '%d', '%d', '%d', '%s' ) );
+$payload['type'] = $type;
 $payload['id'] = (int) $wpdb->insert_id;
 $stored[]      = $payload;
 }
 
 if ( isset( $scores['breakdown']['geo']['factual'] ) && 0 === (int) $scores['breakdown']['geo']['factual'] && ! in_array( 'statistics_inject', $types, true ) ) {
+	$stats_value = 'Add one verified factual sentence with a current statistic relevant to this topic.';
+	if ( ! $this->has_pending_suggestion( $table, $post_id, 'statistics_inject', $stats_value ) ) {
 $wpdb->insert(
 $table,
 array(
 'post_id'         => $post_id,
-'type'            => 'statistics_inject',
+'suggestion_type' => 'statistics_inject',
 'current_value'   => '',
-'suggested_value' => 'Add one verified factual sentence with a current statistic relevant to this topic.',
+'suggested_value' => $stats_value,
 'reasoning'       => 'Factual density is too low for GEO scoring.',
 'priority'        => 'medium',
 'confidence'      => 80,
 'safe_to_apply'   => 0,
 'status'          => 'pending',
+'seo_score'       => (int) ( $scores['seo'] ?? 0 ),
+'aeo_score'       => (int) ( $scores['aeo'] ?? 0 ),
+'geo_score'       => (int) ( $scores['geo'] ?? 0 ),
+'run_id'          => (int) $run_id,
 'created_at'      => current_time( 'mysql' ),
 ),
-array( '%d', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s' )
+array( '%d', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%d', '%d', '%d', '%d', '%s' )
 );
 $stored[] = array(
 'id'              => (int) $wpdb->insert_id,
 'post_id'         => $post_id,
 'type'            => 'statistics_inject',
 'current_value'   => '',
-'suggested_value' => 'Add one verified factual sentence with a current statistic relevant to this topic.',
+'suggested_value' => $stats_value,
 'reasoning'       => 'Factual density is too low for GEO scoring.',
 'priority'        => 'medium',
 'confidence'      => 80,
 'safe_to_apply'   => 0,
 );
+	}
 }
 
 return $stored;
@@ -366,6 +386,7 @@ $row   = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d",
 if ( empty( $row ) ) {
 return new WP_Error( 'not_found', 'Suggestion not found.' );
 }
+$row = $this->normalize_suggestion_row( $row );
 $implementor = new MM_SEO_Implementor();
 return $implementor->apply( $row, $actor );
 }
@@ -450,6 +471,7 @@ $rows = $wpdb->get_results( $wpdb->prepare( $sql, ...$params ) );
 // v6.5 — enrich with clickable post info
 if ( is_array( $rows ) ) {
 	foreach ( $rows as &$r ) {
+		$r = $this->normalize_suggestion_row( $r );
 		if ( ! empty( $r->post_id ) ) {
 			$r->post_title = get_the_title( $r->post_id ) ?: '(no title)';
 			$r->edit_url   = get_edit_post_link( $r->post_id, 'raw' );
@@ -479,10 +501,18 @@ if ( ! current_user_can( 'manage_options' ) ) {
 wp_send_json_error( array( 'message' => 'Unauthorized' ), 403 );
 }
 global $wpdb;
+$settings = new Meesho_Master_Settings();
+$link_mode = sanitize_key( (string) $settings->get( 'mm_internal_linking_mode', 'suggest_only' ) );
 $table = MM_DB::table( 'seo_suggestions' );
 $rows = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM {$table} WHERE status = %s", 'pending' ), ARRAY_A );
 $applied = 0;
 foreach ( $rows as $row ) {
+	$row = $this->normalize_suggestion_row( $row );
+	if ( ! empty( $row['suggestion_type'] ) && 'internal_link' === $row['suggestion_type'] ) {
+		if ( 'off' === $link_mode || 'suggest_only' === $link_mode ) {
+			continue;
+		}
+	}
 if ( MM_SEO_Safety::can_auto_apply( $row ) ) {
 $result = $this->apply_suggestion( (int) $row['id'], 'ai_auto' );
 if ( ! is_wp_error( $result ) ) {
@@ -491,6 +521,42 @@ $applied++;
 }
 }
 wp_send_json_success( sprintf( '%d safe suggestions applied.', $applied ) );
+}
+
+public function ajax_monitoring_dashboard() {
+	meesho_master_verify_ajax_nonce();
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_send_json_error( array( 'message' => 'Unauthorized' ), 403 );
+	}
+	global $wpdb;
+	$run_table = MM_DB::table( 'seo_runs' );
+	$log_table = MM_DB::table( 'audit_log' );
+	$suggestion_table = MM_DB::table( 'seo_suggestions' );
+	$recent_runs = $wpdb->get_results(
+		"SELECT id, trigger_type, status, posts_scanned, suggestions_created, suggestions_applied, failed_posts, started_at, finished_at
+		FROM {$run_table}
+		ORDER BY started_at DESC
+		LIMIT 10",
+		ARRAY_A
+	);
+	$rollbacks_30d = (int) $wpdb->get_var(
+		$wpdb->prepare( "SELECT COUNT(*) FROM {$log_table} WHERE action_type = %s AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)", 'seo_undo' )
+	);
+	$pending_total = (int) $wpdb->get_var(
+		$wpdb->prepare( "SELECT COUNT(*) FROM {$suggestion_table} WHERE status = %s", 'pending' )
+	);
+	$pending_internal_links = (int) $wpdb->get_var(
+		$wpdb->prepare( "SELECT COUNT(*) FROM {$suggestion_table} WHERE status = %s AND suggestion_type = %s", 'pending', 'internal_link' )
+	);
+	$settings = new Meesho_Master_Settings();
+	$link_mode = sanitize_key( (string) $settings->get( 'mm_internal_linking_mode', 'suggest_only' ) );
+	wp_send_json_success( array(
+		'internal_link_mode' => $link_mode,
+		'rollbacks_30d' => $rollbacks_30d,
+		'pending_total' => $pending_total,
+		'pending_internal_links' => $pending_internal_links,
+		'recent_runs' => is_array( $recent_runs ) ? $recent_runs : array(),
+	) );
 }
 
 public function ajax_reject_suggestion() {
@@ -608,5 +674,53 @@ wp_send_json_success( array( 'message' => 'llms.txt generated.', 'content' => $r
 			ARRAY_A
 		);
 		wp_send_json_success( $rows ?: array() );
+	}
+
+	private function has_pending_suggestion( $table, $post_id, $type, $suggested_value ) {
+		global $wpdb;
+
+		$exists = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT id FROM {$table} WHERE post_id = %d AND suggestion_type = %s AND suggested_value = %s AND status = %s LIMIT 1",
+			$post_id,
+			$type,
+			$suggested_value,
+			'pending'
+		) );
+
+		return $exists > 0;
+	}
+
+	private function normalize_suggestion_type( $type ) {
+		$type = sanitize_key( (string) $type );
+		$allowed = array( 'meta_title', 'meta_desc', 'alt_tag', 'internal_link', 'content', 'schema', 'faq', 'howto_schema', 'llms_txt', 'citability_block', 'statistics_inject' );
+		return in_array( $type, $allowed, true ) ? $type : '';
+	}
+
+	private function normalize_priority( $priority ) {
+		$priority = sanitize_key( (string) $priority );
+		$allowed  = array( 'high', 'medium', 'low' );
+		return in_array( $priority, $allowed, true ) ? $priority : 'medium';
+	}
+
+	private function normalize_suggestion_row( $row ) {
+		$type = '';
+		$suggestion_type = '';
+		if ( is_array( $row ) ) {
+			$type            = (string) ( $row['type'] ?? '' );
+			$suggestion_type = (string) ( $row['suggestion_type'] ?? '' );
+		} elseif ( is_object( $row ) ) {
+			$type            = (string) ( $row->type ?? '' );
+			$suggestion_type = (string) ( $row->suggestion_type ?? '' );
+		}
+
+		if ( '' === $type && '' !== $suggestion_type ) {
+			if ( is_array( $row ) ) {
+				$row['type'] = $suggestion_type;
+			} elseif ( is_object( $row ) ) {
+				$row->type = $suggestion_type;
+			}
+		}
+
+		return $row;
 	}
 }

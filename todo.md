@@ -1,0 +1,72 @@
+# Meesho Master v7 — Phase Checklist
+
+Priority order: audit → import fixes → blog rebuild → orders → SEO agent → analytics → copilot → logging → settings → performance/security → docs/testing.
+
+Status summary:
+- Phase 1 (audit & reports) is complete and consolidated.
+- Partial implementations exist for Phases 2–9 (import/blogs/orders/SEO/analytics/copilot/logging/settings modules and UI).
+- Phases 10 and 11 are largely missing; drafts may exist but need completion/validation.
+
+- [x] Phase 1 Audit & reports
+  - Status: complete with consolidated summary in reports/phase-1-summary.md.
+  - [x] Inventory hooks/assets/db/cron/APIs (reports/phase-1-architecture.md)
+  - [x] Map admin/public separation (reports/phase-1-architecture.md)
+  - [x] Review sanitization/nonce/cap checks (reports/phase-1-security.md)
+  - [x] Flag performance bottlenecks (reports/phase-1-performance.md)
+  - [x] UI/UX gaps report (reports/phase-1-ui-ux.md)
+  - [x] Consolidate architecture/missing features/security/performance/UI reports (reports/phase-1-summary.md)
+- [ ] Phase 2 Product import fixes
+  - Status: in progress; core data cleanup/mapping/validation shipped, queue/retry/logging + scoped import tab styling now shipped.
+  - [x] Strengthen description cleanup pipeline (DOM cleanup + allowlist review)
+  - [x] Formatter for headings/lists/tables/images
+  - [x] Eliminate layout-breaking styles/scripts/wrappers
+  - [x] Scope any frontend CSS used by imports
+  - [x] Import queue/progress/retry/logs
+  - [x] Duplicate/SKU handling + category/tag mapping
+  - [x] Image optimization + validation
+- [ ] Phase 3 Blog system rebuild
+  - Status: in progress; editor/save controls expanded, quality checks shipped, publishing governance still pending.
+  - [x] UI fields: slug/status/category/tags/featured image/preview/publish/draft
+  - [x] Live streaming generation UX with progress states
+  - [x] Quality rules (SEO/GEO/AIO)
+  - [ ] Publishing controls (schedule/revisions/excerpts/schema)
+- [ ] Phase 4 Orders
+  - Status: in progress; backfill, mapping quick-actions, sync/search/export, and failure logs are shipped.
+  - [x] Backfill mm_orders from WooCommerce orders
+  - [x] Meesho SKU → URL mapping + quick actions
+  - [x] Sync/search/filters/exports/bulk actions
+  - [x] Failure logs
+- [ ] Phase 5 SEO AI agent
+  - Status: in progress; autonomous flow remains, internal-link mode and monitoring dashboard data endpoints are now shipped.
+  - [x] Reconcile table/schema mismatches
+  - [x] Harden scoring + suggestion storage
+  - [ ] Autonomous optimization flows with approval/rollback
+  - [x] Internal linking engine modes
+  - [x] Monitoring dashboard (history/rollbacks/metrics)
+- [ ] Phase 6 Analytics
+  - Status: in progress; integration status widgets and analytics AJAX/action compatibility updates shipped.
+  - [x] Repair data sources and table usage
+  - [x] GA4/GSC/Woo/RankMath integrations
+  - [x] Dashboards/widgets with real-time refresh
+- [ ] Phase 7 Copilot workflow
+  - Status: in progress; approval gating + queue state tracking + broader auto-mode audit logging shipped, needs runtime validation.
+  - [x] Enforce approval gates
+  - [x] Auto-mode logging/rollback
+  - [x] Action queue state tracking
+- [ ] Phase 8 Logging
+  - Status: in progress; centralized log filtering now supports search/severity/export/retention controls.
+  - [ ] Centralize logs across imports/blogs/SEO/orders/settings/APIs/errors
+  - [x] Filters/search/severity/export/retention controls
+- [ ] Phase 9 Settings
+  - Status: partial implementation exists; validate and complete.
+  - [ ] Audit missing toggles/validation/saves/status checks
+  - [ ] Add settings for streaming/SEO/internal linking/retries/log retention/analytics/cron/cache
+- [ ] Phase 10 Performance & Security
+  - Status: largely missing; plan and implement.
+  - [ ] Optimize queries/background jobs/admin rendering
+  - [ ] Add nonce/cap checks and sanitize/escape paths where missing
+  - [ ] Verify no XSS/CSRF/SQLi regressions
+- [ ] Phase 11 Docs & testing
+  - Status: largely missing; plan and implement.
+  - [ ] User/dev/setup/troubleshooting docs
+  - [ ] Run Woo/theme/mobile/security/AI/SEO workflows
