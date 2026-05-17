@@ -630,7 +630,7 @@ private function requires_explicit_approval( $action ) {
 }
 
 private function action_key( $action ) {
-	return md5( wp_json_encode( $action ) );
+	return hash( 'sha256', (string) wp_json_encode( $action ) );
 }
 
 private function queue_option_name( $thread_key ) {

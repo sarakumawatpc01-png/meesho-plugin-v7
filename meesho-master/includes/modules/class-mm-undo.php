@@ -196,7 +196,7 @@ private function escape_csv_value( $value ) {
 	$value = (string) $value;
 	$value = str_replace( '"', '""', $value );
 	if ( '' !== $value && preg_match( '/^[=\+\-@]/', $value ) ) {
-		$value = "'" . $value;
+		$value = "\t" . $value;
 	}
 	return $value;
 }
