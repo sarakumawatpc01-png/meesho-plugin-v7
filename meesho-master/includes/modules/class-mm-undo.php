@@ -169,7 +169,7 @@ if ( ! empty( $_POST['export'] ) ) {
 			str_replace( array( "\r", "\n" ), ' ', (string) $log->note ),
 			(int) $log->undone,
 		);
-		$csv[] = '"' . implode( '","', array_map( 'strval', $row ) ) . '"';
+		$csv[] = '"' . implode( '","', array_map( array( $this, 'escape_csv_value' ), $row ) ) . '"';
 	}
 	wp_send_json_success( array(
 		'export' => true,
@@ -190,6 +190,15 @@ private function map_severity( $action_type ) {
 		return 'medium';
 	}
 	return 'low';
+}
+
+private function escape_csv_value( $value ) {
+	$value = (string) $value;
+	$value = str_replace( '"', '""', $value );
+	if ( '' !== $value && preg_match( '/^[=\+\-@]/', $value ) ) {
+		$value = "'" . $value;
+	}
+	return $value;
 }
 }
 }
