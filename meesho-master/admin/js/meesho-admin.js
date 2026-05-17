@@ -112,7 +112,10 @@
 		if (tab === 'products') MM.loadProducts && MM.loadProducts();
 		if (tab === 'seo') MM.loadSuggestions && MM.loadSuggestions();
 		if (tab === 'logs') MM.loadLogs && MM.loadLogs();
-		if (tab === 'analytics') MM.loadRankings && MM.loadRankings();
+		if (tab === 'analytics') {
+			MM.loadRankings && MM.loadRankings();
+			MM.loadAnalyticsIntegrations && MM.loadAnalyticsIntegrations();
+		}
 		if (tab === 'orders') MM.loadOrders && MM.loadOrders();
 	};
 
@@ -1210,19 +1213,23 @@
 	MM.loadLogs = function () {
 		const tbody = $('#logs_table_body');
 		if (!tbody) return;
-		tbody.innerHTML = '<tr><td colspan="6" class="mm-text-muted" style="text-align:center;padding:20px;">Loading…</td></tr>';
+		tbody.innerHTML = '<tr><td colspan="7" class="mm-text-muted" style="text-align:center;padding:20px;">Loading…</td></tr>';
 		const actionType = ($('#log_type_filter') || {}).value || '';
 		const source     = ($('#log_source_filter') || {}).value || '';
-		ajaxPost('mm_get_logs', { action_type: actionType, source: source }).then((res) => {
-			if (!res.success) { tbody.innerHTML = '<tr><td colspan="6" class="mm-text-muted">Failed to load logs.</td></tr>'; return; }
+		const severity   = ($('#log_severity_filter') || {}).value || '';
+		const q          = ($('#log_search_filter') || {}).value || '';
+		const retention  = ($('#log_retention_filter') || {}).value || '0';
+		ajaxPost('mm_get_logs', { action_type: actionType, source: source, severity, q, retention_days: retention }).then((res) => {
+			if (!res.success) { tbody.innerHTML = '<tr><td colspan="7" class="mm-text-muted">Failed to load logs.</td></tr>'; return; }
 			const rows = (res.data && res.data.logs) || [];
-			if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" class="mm-text-muted" style="text-align:center;padding:20px;">No logs found.</td></tr>'; return; }
+			if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="mm-text-muted" style="text-align:center;padding:20px;">No logs found.</td></tr>'; return; }
 			tbody.innerHTML = rows.map((r) => {
 				const postTitle = r.target_id ? `#${r.target_id}` : '—';
 				const changes = (r.note || (r.new_value ? r.new_value.substring(0, 80) : '—'));
 				const canUndo = r.undoable == '1' && r.undone != '1';
 				return `<tr>
 					<td>${escapeHtml(r.created_at || '')}</td>
+					<td><span class="mm-badge mm-badge-${r.severity === 'high' ? 'danger' : (r.severity === 'medium' ? 'info' : 'success')}">${escapeHtml(r.severity || 'low')}</span></td>
 					<td>${escapeHtml(r.action_type || '')}</td>
 					<td>${escapeHtml(postTitle)}</td>
 					<td>${escapeHtml(r.actor || r.source || '')}</td>
@@ -1231,6 +1238,23 @@
 				</tr>`;
 			}).join('');
 		});
+	};
+
+	MM.exportLogsCsv = function () {
+		const actionType = ($('#log_type_filter') || {}).value || '';
+		const source     = ($('#log_source_filter') || {}).value || '';
+		const severity   = ($('#log_severity_filter') || {}).value || '';
+		const q          = ($('#log_search_filter') || {}).value || '';
+		const retention  = ($('#log_retention_filter') || {}).value || '0';
+		ajaxPost('mm_get_logs', { action_type: actionType, source: source, severity, q, retention_days: retention, export: 1, per_page: 200 })
+			.then((res) => {
+				if (!res.success || !res.data || !res.data.csv) return MM.toast('Export failed.', 'error');
+				const a = document.createElement('a');
+				a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(res.data.csv);
+				a.download = res.data.filename || 'meesho-audit-logs.csv';
+				a.click();
+				MM.toast('Logs exported.', 'success');
+			});
 	};
 
 	/* ============================================================
@@ -1242,20 +1266,51 @@
 		tbody.innerHTML = '<tr><td colspan="6" class="mm-text-muted" style="text-align:center;padding:20px;">Loading…</td></tr>';
 		ajaxPost('mm_get_rankings').then((res) => {
 			if (!res.success) { tbody.innerHTML = '<tr><td colspan="6" class="mm-text-muted">No data.</td></tr>'; return; }
-			const rows = res.data || [];
+			const rows = (res.data && Array.isArray(res.data.rows)) ? res.data.rows : (Array.isArray(res.data) ? res.data : []);
 			if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" class="mm-text-muted" style="text-align:center;padding:20px;">No rankings yet. Configure GSC in Settings.</td></tr>'; return; }
 			tbody.innerHTML = rows.map((r) =>
-				`<tr><td>${escapeHtml(r.keyword)}</td><td>${escapeHtml(r.page || '')}</td><td>${escapeHtml(r.position || '')}</td><td>${escapeHtml(r.delta || '')}</td><td>${escapeHtml(r.impressions || '')}</td><td>${escapeHtml(r.ctr || '')}</td></tr>`
+				`<tr><td>${escapeHtml(r.keyword)}</td><td>${escapeHtml(r.page_url || r.page || '')}</td><td>${escapeHtml(r.position || '')}</td><td>${escapeHtml(r.delta || '—')}</td><td>${escapeHtml(r.impressions || '')}</td><td>${escapeHtml(r.ctr || '')}</td></tr>`
 			).join('');
 		});
 	};
 
-	MM.addKeyword = function () {
+	MM.addKeyword = function (forceRefresh = false) {
 		const input = $('#new_keyword');
 		if (!input || !input.value.trim()) return MM.toast('Enter a keyword.', 'error');
-		ajaxPost('mm_add_keyword', { keyword: input.value.trim() }).then((res) => {
+		ajaxPost('mm_add_keyword', { keyword: input.value.trim(), force_refresh: forceRefresh ? 1 : 0 }).then((res) => {
 			if (res.success) { input.value = ''; MM.loadRankings(); }
 			else MM.toast('Failed.', 'error');
+		});
+	};
+
+	MM.loadAnalyticsIntegrations = function () {
+		const wrap = $('#mm_integrations_status');
+		if (!wrap) return;
+		wrap.innerHTML = '<p class="mm-text-muted">Loading integration status…</p>';
+		ajaxPost('mm_get_integration_status').then((res) => {
+			if (!res.success) {
+				wrap.innerHTML = '<p class="mm-text-muted">Failed to load integration status.</p>';
+				return;
+			}
+			const data = res.data || {};
+			const available = data.available || {};
+			const wc = data.woocommerce || {};
+			const rows = [
+				['WooCommerce', available.woocommerce ? 'Connected' : 'Not detected'],
+				['Google Site Kit', available.site_kit ? 'Connected' : 'Not detected'],
+				['RankMath', available.rankmath ? 'Connected' : 'Not detected'],
+				['Google Search Console', data.gsc && data.gsc.available ? 'Configured' : 'Not configured'],
+				['GA4', data.ga4 && data.ga4.available ? 'Configured' : 'Not configured'],
+				['Meta', data.meta && data.meta.available ? 'Connected' : 'Not detected'],
+			];
+			wrap.innerHTML = `<div class="mm-card" style="padding:0;overflow:auto;">
+				<table class="mm-table">
+					<thead><tr><th>Integration</th><th>Status</th><th>Details</th></tr></thead>
+					<tbody>
+						${rows.map((r) => `<tr><td>${escapeHtml(r[0])}</td><td>${escapeHtml(r[1])}</td><td>${escapeHtml(r[0] === 'WooCommerce' ? ('Orders 30d: ' + (wc.orders_last_30d || 0) + ', Revenue 30d: ' + (wc.revenue_last_30d || 0)) : '—')}</td></tr>`).join('')}
+					</tbody>
+				</table>
+			</div>`;
 		});
 	};
 
@@ -1337,6 +1392,19 @@
 				`<button class="mm-btn mm-btn-sm mm-btn-outline mm-mt-10" onclick="MeeshoMaster.applyCopilotAction(${escapeHtml(JSON.stringify(JSON.stringify(a)))})">Apply: ${escapeHtml(a.action || 'action')}</button>`
 			).join(' ');
 			MM.appendCopilotMessage('bot', escapeHtml(res.data.reply || '').replace(/\n/g, '<br>') + actionsHtml);
+			if (currentCopilotThread) {
+				ajaxPost('mm_copilot_queue_state', { thread_key: currentCopilotThread }).then((qs) => {
+					if (!qs.success) return;
+					const list = Object.values(qs.data || {});
+					if (!list.length) return;
+					const counts = list.reduce((acc, item) => {
+						const k = item.state || 'queued';
+						acc[k] = (acc[k] || 0) + 1;
+						return acc;
+					}, {});
+					MM.appendCopilotMessage('bot', `<em>Queue:</em> pending ${counts.pending || 0}, approval ${counts.needs_approval || 0}, applied ${counts.applied || 0}, failed ${counts.failed || 0}.`);
+				});
+			}
 		});
 	};
 
@@ -1373,7 +1441,7 @@
 	MM.applyCopilotAction = function (actionJsonString) {
 		let action;
 		try { action = JSON.parse(actionJsonString); } catch (e) { return MM.toast('Bad action data.', 'error'); }
-		ajaxPost('mm_copilot_apply', { action: JSON.stringify(action) }).then((res) => {
+		ajaxPost('mm_copilot_apply', { action_data: JSON.stringify(action), approved: 1, thread_key: currentCopilotThread || '' }).then((res) => {
 			MM.toast(res.success ? 'Applied.' : 'Failed.', res.success ? 'success' : 'error');
 		});
 	};
@@ -1701,6 +1769,27 @@
 					</tbody></table>`;
 			});
 		});
+		const ga4ForceBtn = $('#btn_load_ga4_force');
+		if (ga4ForceBtn) ga4ForceBtn.addEventListener('click', () => {
+			const range = ($('#ga4_range') || {}).value || '30';
+			ajaxPost('mm_fetch_ga4_data', { range, force_refresh: 1 }).then((res) => {
+				if (!res.success) return MM.toast((res.data && res.data.message) ? res.data.message : 'Force refresh failed.', 'error');
+				MM.toast('GA4 cache refreshed.', 'success');
+				const btn = $('#btn_load_ga4');
+				if (btn) btn.click();
+			});
+		});
+		const addKeywordBtn = $('#btn_add_keyword');
+		if (addKeywordBtn) addKeywordBtn.addEventListener('click', () => MM.addKeyword(false));
+		const refreshRankingsBtn = $('#btn_refresh_rankings');
+		if (refreshRankingsBtn) refreshRankingsBtn.addEventListener('click', () => {
+			const input = $('#new_keyword');
+			if (input && input.value && input.value.trim()) return MM.addKeyword(true);
+			MM.loadRankings();
+		});
+		const refreshIntegrationsBtn = $('#btn_refresh_integrations');
+		if (refreshIntegrationsBtn) refreshIntegrationsBtn.addEventListener('click', MM.loadAnalyticsIntegrations);
+		if ($('#mm_integrations_status')) MM.loadAnalyticsIntegrations();
 
 		// E2 — GA4 mode toggle in settings tab
 		const ga4Radios = $$('input[name="mm_ga4_mode"]');

@@ -1,6 +1,15 @@
 <?php $settings = new Meesho_Master_Settings(); $site_id = $settings->get( 'mm_hotjar_id' ); ?>
 <div class="mm-grid mm-grid-2">
 	<div class="mm-card">
+		<div class="mm-flex-between" style="align-items:center;">
+			<h3 style="margin:0;">🔌 Integrations Health</h3>
+			<button class="mm-btn mm-btn-outline mm-btn-sm" id="btn_refresh_integrations">Refresh</button>
+		</div>
+		<div id="mm_integrations_status" class="mm-mt-10">
+			<p class="mm-text-muted">Loading integration status…</p>
+		</div>
+	</div>
+	<div class="mm-card">
 		<h3>🔥 Heatmaps (Hotjar) - v6</h3>
 		<?php if ( ! empty( $site_id ) ) : ?>
 		<iframe src="https://insights.hotjar.com/sites/<?php echo intval( $site_id ); ?>/heatmaps" style="width:100%; height:400px; border:1px solid var(--mm-border); border-radius:8px;" loading="lazy"></iframe>
@@ -18,6 +27,7 @@
 		<div class="mm-form-row mm-flex mm-gap-10">
 			<input type="text" id="new_keyword" class="mm-input" placeholder="Enter a keyword to track...">
 			<button class="mm-btn mm-btn-primary" id="btn_add_keyword">Add</button>
+			<button class="mm-btn mm-btn-outline" id="btn_refresh_rankings">Force Refresh</button>
 		</div>
 		<div class="mm-form-row mm-mt-10">
 			<label class="mm-label">Competitor Domains (comma-separated)</label>
@@ -46,6 +56,7 @@
 				<option value="90">Last 90 days</option>
 			</select>
 			<button class="mm-btn mm-btn-primary" id="btn_load_ga4">Load Traffic Data</button>
+			<button class="mm-btn mm-btn-outline" id="btn_load_ga4_force">Force Refresh</button>
 		</div>
 	</div>
 	<div id="ga4_content" class="mm-mt-20">

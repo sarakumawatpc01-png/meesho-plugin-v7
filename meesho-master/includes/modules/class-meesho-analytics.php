@@ -4,9 +4,12 @@ class Meesho_Master_Analytics {
 public function __construct() {
 add_action( 'wp_ajax_meesho_get_rankings', array( $this, 'ajax_get_rankings' ) );
 add_action( 'wp_ajax_meesho_add_keyword', array( $this, 'ajax_add_keyword' ) );
+add_action( 'wp_ajax_mm_get_rankings', array( $this, 'ajax_get_rankings' ) );
+add_action( 'wp_ajax_mm_add_keyword', array( $this, 'ajax_add_keyword' ) );
 add_action( 'wp_ajax_meesho_send_report', array( $this, 'ajax_send_report' ) );
 add_action( 'wp_ajax_meesho_get_heatmap_insights', array( $this, 'ajax_heatmap_insights' ) );
 add_action( 'wp_ajax_mm_fetch_ga4_data', array( $this, 'ajax_fetch_ga4_data' ) );
+add_action( 'wp_ajax_mm_get_integration_status', array( $this, 'ajax_get_integration_status' ) );
 add_action( 'wp_head', array( $this, 'inject_hotjar' ) );
 // E3: Separate daily/weekly hooks replace the single meesho_email_report hook
 add_action( 'mm_send_daily_report', array( $this, 'send_scheduled_report' ) );
@@ -314,6 +317,26 @@ wp_send_json_success( array(
 'rows'            => $rows,
 'latest_recorded' => $latest_date,
 'generated_at'    => current_time( 'mysql' ),
+) );
+}
+
+public function ajax_get_integration_status() {
+meesho_master_verify_ajax_nonce();
+if ( ! current_user_can( 'manage_options' ) ) {
+wp_send_json_error( array( 'message' => 'Unauthorized' ), 403 );
+}
+$available = class_exists( 'MM_Integrations' ) ? MM_Integrations::detect_available() : array();
+$wc = class_exists( 'MM_Integrations' ) ? MM_Integrations::woocommerce_snapshot() : array( 'available' => false );
+$ga = class_exists( 'MM_Integrations' ) ? MM_Integrations::google_analytics_snapshot() : array( 'available' => false );
+$gsc = class_exists( 'MM_Integrations' ) ? MM_Integrations::search_console_snapshot() : array( 'available' => false );
+$meta = class_exists( 'MM_Integrations' ) ? MM_Integrations::meta_snapshot() : array( 'available' => false );
+wp_send_json_success( array(
+'available' => $available,
+'woocommerce' => $wc,
+'ga4' => $ga,
+'gsc' => $gsc,
+'meta' => $meta,
+'fetched_at' => current_time( 'mysql' ),
 ) );
 }
 

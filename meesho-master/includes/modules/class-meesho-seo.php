@@ -18,6 +18,7 @@ add_action( 'wp_ajax_mm_list_targetable_posts', array( $this, 'ajax_list_targeta
 // v6.5 — flat handlers for new dashboard JS
 add_action( 'wp_ajax_mm_seo_list_scores', array( $this, 'ajax_list_scores' ) );
 add_action( 'wp_ajax_mm_seo_score_trends', array( $this, 'ajax_score_trends' ) );
+add_action( 'wp_ajax_mm_seo_monitoring_dashboard', array( $this, 'ajax_monitoring_dashboard' ) );
 add_action( 'mm_seo_run_morning', array( $this, 'run_scheduled_batch' ) );
 add_action( 'mm_seo_run_evening', array( $this, 'run_scheduled_batch' ) );
 add_action( 'admin_notices', array( $this, 'maybe_render_stale_run_notice' ) );
@@ -500,11 +501,18 @@ if ( ! current_user_can( 'manage_options' ) ) {
 wp_send_json_error( array( 'message' => 'Unauthorized' ), 403 );
 }
 global $wpdb;
+$settings = new Meesho_Master_Settings();
+$link_mode = sanitize_key( (string) $settings->get( 'mm_internal_linking_mode', 'suggest_only' ) );
 $table = MM_DB::table( 'seo_suggestions' );
 $rows = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM {$table} WHERE status = %s", 'pending' ), ARRAY_A );
 $applied = 0;
 foreach ( $rows as $row ) {
 	$row = $this->normalize_suggestion_row( $row );
+	if ( ! empty( $row['suggestion_type'] ) && 'internal_link' === $row['suggestion_type'] ) {
+		if ( 'off' === $link_mode || 'suggest_only' === $link_mode ) {
+			continue;
+		}
+	}
 if ( MM_SEO_Safety::can_auto_apply( $row ) ) {
 $result = $this->apply_suggestion( (int) $row['id'], 'ai_auto' );
 if ( ! is_wp_error( $result ) ) {
@@ -513,6 +521,42 @@ $applied++;
 }
 }
 wp_send_json_success( sprintf( '%d safe suggestions applied.', $applied ) );
+}
+
+public function ajax_monitoring_dashboard() {
+	meesho_master_verify_ajax_nonce();
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_send_json_error( array( 'message' => 'Unauthorized' ), 403 );
+	}
+	global $wpdb;
+	$run_table = MM_DB::table( 'seo_runs' );
+	$log_table = MM_DB::table( 'audit_log' );
+	$suggestion_table = MM_DB::table( 'seo_suggestions' );
+	$recent_runs = $wpdb->get_results(
+		"SELECT id, trigger_type, status, posts_scanned, suggestions_created, suggestions_applied, failed_posts, started_at, finished_at
+		FROM {$run_table}
+		ORDER BY started_at DESC
+		LIMIT 10",
+		ARRAY_A
+	);
+	$rollbacks_30d = (int) $wpdb->get_var(
+		$wpdb->prepare( "SELECT COUNT(*) FROM {$log_table} WHERE action_type = %s AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)", 'seo_undo' )
+	);
+	$pending_total = (int) $wpdb->get_var(
+		$wpdb->prepare( "SELECT COUNT(*) FROM {$suggestion_table} WHERE status = %s", 'pending' )
+	);
+	$pending_internal_links = (int) $wpdb->get_var(
+		$wpdb->prepare( "SELECT COUNT(*) FROM {$suggestion_table} WHERE status = %s AND suggestion_type = %s", 'pending', 'internal_link' )
+	);
+	$settings = new Meesho_Master_Settings();
+	$link_mode = sanitize_key( (string) $settings->get( 'mm_internal_linking_mode', 'suggest_only' ) );
+	wp_send_json_success( array(
+		'internal_link_mode' => $link_mode,
+		'rollbacks_30d' => $rollbacks_30d,
+		'pending_total' => $pending_total,
+		'pending_internal_links' => $pending_internal_links,
+		'recent_runs' => is_array( $recent_runs ) ? $recent_runs : array(),
+	) );
 }
 
 public function ajax_reject_suggestion() {

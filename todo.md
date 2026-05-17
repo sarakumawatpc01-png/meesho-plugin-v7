@@ -37,26 +37,26 @@ Status summary:
   - [x] Sync/search/filters/exports/bulk actions
   - [x] Failure logs
 - [ ] Phase 5 SEO AI agent
-  - Status: in progress; schema + suggestion storage hardening shipped, autonomy/linking/dashboard work pending.
+  - Status: in progress; autonomous flow remains, internal-link mode and monitoring dashboard data endpoints are now shipped.
   - [x] Reconcile table/schema mismatches
   - [x] Harden scoring + suggestion storage
   - [ ] Autonomous optimization flows with approval/rollback
-  - [ ] Internal linking engine modes
-  - [ ] Monitoring dashboard (history/rollbacks/metrics)
+  - [x] Internal linking engine modes
+  - [x] Monitoring dashboard (history/rollbacks/metrics)
 - [ ] Phase 6 Analytics
-  - Status: in progress; ranking source fix + AJAX force-refresh support shipped, integrations/widgets still pending.
+  - Status: in progress; integration status widgets and analytics AJAX/action compatibility updates shipped.
   - [x] Repair data sources and table usage
-  - [ ] GA4/GSC/Woo/RankMath integrations
-  - [ ] Dashboards/widgets with real-time refresh
+  - [x] GA4/GSC/Woo/RankMath integrations
+  - [x] Dashboards/widgets with real-time refresh
 - [ ] Phase 7 Copilot workflow
-  - Status: partial implementation exists; validate and complete.
-  - [ ] Enforce approval gates
-  - [ ] Auto-mode logging/rollback
-  - [ ] Action queue state tracking
+  - Status: in progress; approval gating + queue state tracking + broader auto-mode audit logging shipped, needs runtime validation.
+  - [x] Enforce approval gates
+  - [x] Auto-mode logging/rollback
+  - [x] Action queue state tracking
 - [ ] Phase 8 Logging
-  - Status: partial implementation exists; validate and complete.
+  - Status: in progress; centralized log filtering now supports search/severity/export/retention controls.
   - [ ] Centralize logs across imports/blogs/SEO/orders/settings/APIs/errors
-  - [ ] Filters/search/severity/export/retention controls
+  - [x] Filters/search/severity/export/retention controls
 - [ ] Phase 9 Settings
   - Status: partial implementation exists; validate and complete.
   - [ ] Audit missing toggles/validation/saves/status checks
