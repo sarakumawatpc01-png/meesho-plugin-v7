@@ -371,6 +371,41 @@ $test_btn = function ( $service, $label = 'Test' ) {
 		</div>
 	</div>
 
+	<!-- Automation / Retention / Cache -->
+	<div class="mm-card">
+		<h3>🧩 Automation, Retention & Cache</h3>
+		<div class="mm-form-row">
+			<label class="mm-label">Internal Linking Mode</label>
+			<select name="mm_internal_linking_mode" class="mm-select">
+				<option value="off" <?php selected( $settings->get( 'mm_internal_linking_mode', 'suggest_only' ), 'off' ); ?>>Off</option>
+				<option value="suggest_only" <?php selected( $settings->get( 'mm_internal_linking_mode', 'suggest_only' ), 'suggest_only' ); ?>>Suggest only (manual apply)</option>
+				<option value="auto_safe" <?php selected( $settings->get( 'mm_internal_linking_mode', 'suggest_only' ), 'auto_safe' ); ?>>Auto-apply safe links</option>
+			</select>
+		</div>
+		<div class="mm-form-row">
+			<label class="mm-label">Import Retry Limit</label>
+			<input type="number" min="1" max="10" name="mm_import_retry_limit" class="mm-input" value="<?php echo esc_attr( $settings->get( 'mm_import_retry_limit', '3' ) ); ?>">
+		</div>
+		<div class="mm-form-row">
+			<label class="mm-label">Log Retention (days)</label>
+			<input type="number" min="7" max="365" name="mm_log_retention_days" class="mm-input" value="<?php echo esc_attr( $settings->get( 'mm_log_retention_days', '90' ) ); ?>">
+		</div>
+		<div class="mm-form-row">
+			<label><input type="checkbox" name="mm_streaming_enabled" value="yes" <?php checked( $settings->get( 'mm_streaming_enabled', 'yes' ), 'yes' ); ?>> Enable streaming UX features</label>
+		</div>
+		<div class="mm-form-row">
+			<label><input type="checkbox" name="mm_analytics_cache_enabled" value="yes" <?php checked( $settings->get( 'mm_analytics_cache_enabled', 'yes' ), 'yes' ); ?>> Enable analytics cache</label>
+		</div>
+		<div class="mm-form-row">
+			<label class="mm-label">Analytics Cache TTL (hours)</label>
+			<input type="number" min="1" max="168" name="mm_analytics_cache_ttl_hours" class="mm-input" value="<?php echo esc_attr( $settings->get( 'mm_analytics_cache_ttl_hours', '4' ) ); ?>">
+		</div>
+		<div class="mm-form-row">
+			<label class="mm-label">OpenRouter Model List Cache TTL (hours)</label>
+			<input type="number" min="1" max="168" name="mm_openrouter_models_cache_hours" class="mm-input" value="<?php echo esc_attr( $settings->get( 'mm_openrouter_models_cache_hours', '12' ) ); ?>">
+		</div>
+	</div>
+
 </div><!-- /.mm-grid -->
 
 <!-- llms.txt — single section -->

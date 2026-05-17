@@ -404,9 +404,11 @@ class Meesho_Master_Import {
 			$item['title']      = sanitize_text_field( (string) ( $result['title'] ?? '' ) );
 			$item['staged_id']  = absint( $result['staged_id'] ?? 0 );
 		} catch ( Exception $e ) {
+			$retry_limit = (int) $this->settings()->get( 'mm_import_retry_limit', 3 );
+			$retry_limit = min( 10, max( 1, $retry_limit ) );
 			$item['attempts']   = absint( $item['attempts'] ?? 0 ) + 1;
 			$item['last_error'] = sanitize_text_field( $e->getMessage() );
-			$item['status']     = $item['attempts'] >= 3 ? 'failed' : 'retry';
+			$item['status']     = $item['attempts'] >= $retry_limit ? 'failed' : 'retry';
 			$this->log_import_failure(
 				'import_queue_process',
 				$item['last_error'],
@@ -2171,10 +2173,12 @@ class Meesho_Master_Import {
 		}
 		$force = ! empty( $_POST['force'] );
 		$cache_key = 'mm_openrouter_models_v1';
+		$settings = new Meesho_Master_Settings();
+		$cache_ttl_hours = (int) $settings->get( 'mm_openrouter_models_cache_hours', 12 );
+		$cache_ttl_hours = min( 168, max( 1, $cache_ttl_hours ) );
 		if ( ! $force ) {
 			$cached = get_transient( $cache_key );
 			if ( is_array( $cached ) && ! empty( $cached ) ) {
-				$settings    = new Meesho_Master_Settings();
 				$assignments = array(
 					'seo'     => $settings->get( 'mm_openrouter_model_seo',     '' ),
 					'blog'    => $settings->get( 'mm_openrouter_model_blog',    '' ),
@@ -2215,8 +2219,7 @@ class Meesho_Master_Import {
 			}
 			return strcmp( $a['id'], $b['id'] );
 		} );
-		set_transient( $cache_key, $models, 12 * HOUR_IN_SECONDS );
-		$settings    = new Meesho_Master_Settings();
+		set_transient( $cache_key, $models, $cache_ttl_hours * HOUR_IN_SECONDS );
 		$assignments = array(
 			'seo'     => $settings->get( 'mm_openrouter_model_seo',     '' ),
 			'blog'    => $settings->get( 'mm_openrouter_model_blog',    '' ),

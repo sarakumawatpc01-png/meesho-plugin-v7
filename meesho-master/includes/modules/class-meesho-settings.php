@@ -64,22 +64,65 @@ update_option( $this->option_key, $all );
 
 public function save_bulk( $data ) {
 	$all = get_option( $this->option_key, array() );
+	$allowed_keys = array_keys( $this->defaults() );
 	// Fields that need textarea-safe sanitization (preserves newlines)
 	$textarea_keys = array(
 		'mm_gsc_credentials',
+		'mm_gsc_service_account_json',
+		'mm_ga4_service_account_json',
 		'mm_prompt_description_master', 'mm_prompt_image_master', 'mm_prompt_blog_master',
 		'mm_prompt_seo_master', 'mm_blog_default_instructions',
 		'llms_txt_config',
 	);
 	foreach ( $data as $key => $value ) {
+		if ( ! in_array( $key, $allowed_keys, true ) ) {
+			continue;
+		}
 		if ( in_array( $key, $textarea_keys, true ) ) {
 			$clean = sanitize_textarea_field( wp_unslash( $value ) );
 		} else {
-			$clean = is_array( $value ) ? wp_json_encode( $value ) : sanitize_text_field( wp_unslash( $value ) );
+			$clean = is_array( $value ) ? wp_json_encode( $value ) : $this->sanitize_setting_value( $key, $value );
 		}
 		$all[ $key ] = $this->should_encrypt( $key ) ? $this->encrypt( $clean ) : $clean;
 	}
 	update_option( $this->option_key, wp_parse_args( $all, $this->defaults() ) );
+}
+
+private function sanitize_setting_value( $key, $value ) {
+	$raw = sanitize_text_field( wp_unslash( $value ) );
+	$boolean_keys = array(
+		'mm_copilot_enabled',
+		'copilot_auto_implement',
+		'automation_enabled',
+		'ai_show_free_only',
+		'mm_openrouter_show_free_only',
+		'mm_streaming_enabled',
+		'mm_analytics_cache_enabled',
+	);
+	if ( in_array( $key, $boolean_keys, true ) ) {
+		return 'yes' === $raw ? 'yes' : 'no';
+	}
+	switch ( $key ) {
+		case 'mm_markup_type':
+			return in_array( $raw, array( 'percentage', 'flat' ), true ) ? $raw : 'percentage';
+		case 'mm_price_round':
+			return in_array( $raw, array( 'none', 'nearest_10', 'nearest_50', 'nearest_99' ), true ) ? $raw : 'none';
+		case 'mm_internal_linking_mode':
+			return in_array( $raw, array( 'off', 'suggest_only', 'auto_safe' ), true ) ? $raw : 'suggest_only';
+		case 'email_frequency':
+			return in_array( $raw, array( 'daily', 'weekly' ), true ) ? $raw : 'daily';
+		case 'mm_ga4_mode':
+		case 'mm_gsc_mode':
+			return in_array( $raw, array( 'site_kit', 'service_account' ), true ) ? $raw : 'site_kit';
+		case 'mm_import_retry_limit':
+			return (string) min( 10, max( 1, absint( $raw ) ) );
+		case 'mm_log_retention_days':
+			return (string) min( 365, max( 7, absint( $raw ) ) );
+		case 'mm_analytics_cache_ttl_hours':
+		case 'mm_openrouter_models_cache_hours':
+			return (string) min( 168, max( 1, absint( $raw ) ) );
+	}
+	return $raw;
 }
 
 public function defaults() {
@@ -87,6 +130,9 @@ return array(
 'pricing_markup_type'    => 'percentage',
 'pricing_markup_value'   => '20',
 'pricing_rounding'       => 'none',
+'mm_markup_type'         => 'percentage',
+'mm_markup_value'        => '20',
+'mm_price_round'         => 'none',
 'scrapling_url'          => '',
 'scrapling_timeout'      => '30',
 'openrouter_api_key'     => '',
@@ -114,8 +160,16 @@ return array(
 'automation_batch_size'  => '5',
 'automation_delay_ms'    => '500',
 'mm_seo_max_suggestions' => '10',
+'mm_internal_linking_mode' => 'suggest_only',
+'mm_import_retry_limit'  => '3',
+'mm_log_retention_days'  => '90',
+'mm_analytics_cache_enabled' => 'yes',
+'mm_analytics_cache_ttl_hours' => '4',
+'mm_openrouter_models_cache_hours' => '12',
+'mm_streaming_enabled'   => 'yes',
 'email_recipients'       => '',
 'email_from_override'    => '',
+'email_subject_prefix'   => 'Meesho Master Report',
 'email_frequency'        => 'daily',
 'email_pdf_library'      => 'dompdf',
 'hotjar_site_id'         => '',
@@ -136,6 +190,10 @@ return array(
 // F3 — GSC unified auth
 'mm_gsc_mode'                   => 'site_kit',
 'mm_gsc_service_account_json'   => '',
+// E2 — GA4 data API
+'mm_ga4_property_id'            => '',
+'mm_ga4_mode'                   => 'site_kit',
+'mm_ga4_service_account_json'   => '',
 // Meta
 'mm_meta_pixel_id'        => '',
 'mm_meta_access_token'    => '',
@@ -199,9 +257,42 @@ default: return round( $price, 2 );
 public function ajax_save_settings() {
 meesho_master_verify_ajax_nonce();
 if ( ! current_user_can( 'manage_options' ) ) { wp_send_json_error( array( 'message' => 'Unauthorized' ), 403 ); }
+$defaults = $this->defaults();
+$before   = $this->get_all();
 $fields = $_POST;
 unset( $fields['action'], $fields['nonce'] );
 $this->save_bulk( $fields );
+	$after = $this->get_all();
+	$changed = array();
+	foreach ( array_keys( $defaults ) as $key ) {
+		if ( ! array_key_exists( $key, $fields ) ) {
+			continue;
+		}
+		if ( (string) ( $before[ $key ] ?? '' ) !== (string) ( $after[ $key ] ?? '' ) ) {
+			$changed[] = $key;
+		}
+	}
+	$safe_changed = array_values(
+		array_filter(
+			$changed,
+			static function ( $key ) {
+				return ! preg_match( '/(key|secret|password|token|credentials)/i', $key );
+			}
+		)
+	);
+	if ( ! empty( $changed ) && class_exists( 'MM_Logger' ) ) {
+		( new MM_Logger() )->log_before_change(
+			'settings_update',
+			'settings',
+			0,
+			wp_json_encode( array( 'changed_count' => count( $changed ) ) ),
+			wp_json_encode( array( 'changed_keys' => $safe_changed, 'changed_count' => count( $changed ) ) ),
+			0,
+			'manual',
+			'settings_save',
+			0
+		);
+	}
 wp_send_json_success( 'Settings saved.' );
 }
 
@@ -232,6 +323,19 @@ $from = $this->get( 'email_from_override' );
 if ( '' === $from ) { $from = get_option( 'admin_email' ); }
 add_filter( 'wp_mail_from', static function () use ( $from ) { return $from; } );
 $sent = wp_mail( $to, 'Meesho Master — Test Email (' . wp_date( 'd/m/Y' ) . ')', 'This is a test email from Meesho Master.', array( 'Content-Type: text/html; charset=UTF-8' ) );
+	if ( class_exists( 'MM_Logger' ) ) {
+		( new MM_Logger() )->log_before_change(
+			'settings_test_email',
+			'settings',
+			0,
+			'',
+			wp_json_encode( array( 'sent' => (bool) $sent, 'recipients_count' => count( array_filter( array_map( 'trim', explode( ',', (string) $to ) ) ) ) ) ),
+			0,
+			'manual',
+			'test_email',
+			0
+		);
+	}
 $sent ? wp_send_json_success( 'Test email sent successfully.' ) : wp_send_json_error( array( 'message' => 'Failed to send test email.' ), 400 );
 }
 
@@ -253,6 +357,19 @@ $sent ? wp_send_json_success( 'Test email sent successfully.' ) : wp_send_json_e
 		}
 		if ( empty( $key ) ) {
 			wp_send_json_error( array( 'message' => 'No key provided or saved for service ' . $service ) );
+		}
+		if ( class_exists( 'MM_Logger' ) ) {
+			( new MM_Logger() )->log_before_change(
+				'settings_api_test',
+				'settings',
+				0,
+				'',
+				wp_json_encode( array( 'service' => $service ) ),
+				0,
+				'manual',
+				'api_test',
+				0
+			);
 		}
 
 		switch ( $service ) {
@@ -640,10 +757,16 @@ $sent ? wp_send_json_success( 'Test email sent successfully.' ) : wp_send_json_e
 			}
 		}
 		if ( empty( $missing ) ) {
+			if ( class_exists( 'MM_Logger' ) ) {
+				( new MM_Logger() )->log_before_change( 'settings_db_repair', 'settings', 0, '', wp_json_encode( array( 'missing' => 0, 'tables' => count( $diag ) ) ), 0, 'manual', 'db_repair', 0 );
+			}
 			wp_send_json_success( array(
 				'message' => '✅ All ' . count( $diag ) . ' tables exist. Database is healthy.',
 				'tables'  => $diag,
 			) );
+		}
+		if ( class_exists( 'MM_Logger' ) ) {
+			( new MM_Logger() )->log_before_change( 'settings_db_repair', 'settings', 0, '', wp_json_encode( array( 'missing' => $missing, 'tables' => count( $diag ) ) ), 0, 'manual', 'db_repair', 0 );
 		}
 		wp_send_json_error( array(
 			'message' => '⚠️ Reinstall ran but ' . count( $missing ) . ' table(s) still missing: ' . implode( ', ', $missing ) . '. Check that your database user has CREATE TABLE permission.',

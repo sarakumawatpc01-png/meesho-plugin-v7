@@ -50,14 +50,17 @@ echo "<!-- Hotjar Tracking Code -->\n<script>(function(h,o,t,j,a,r){h.hj=h.hj||f
 
 public function fetch_gsc_data( $keyword, $force_refresh = false ) {
 $cache_key = 'mm_gsc_' . md5( $keyword );
+$settings = new Meesho_Master_Settings();
+$cache_enabled = 'yes' === $settings->get( 'mm_analytics_cache_enabled', 'yes' );
+$cache_ttl_hours = (int) $settings->get( 'mm_analytics_cache_ttl_hours', 4 );
+$cache_ttl_hours = min( 168, max( 1, $cache_ttl_hours ) );
 if ( $force_refresh ) {
 delete_transient( $cache_key );
 }
 $cached = get_transient( $cache_key );
-if ( ! $force_refresh && false !== $cached ) {
+if ( $cache_enabled && ! $force_refresh && false !== $cached ) {
 return $cached;
 }
-$settings = new Meesho_Master_Settings();
 $mode     = $settings->get( 'mm_gsc_mode', 'site_kit' );
 
 // Mode A — proxy through Google Site Kit REST API
@@ -88,7 +91,9 @@ $rows = $data['rows'] ?? $data ?? array();
 if ( ! is_array( $rows ) ) {
 $rows = array();
 }
-set_transient( $cache_key, $rows, 4 * HOUR_IN_SECONDS );
+if ( $cache_enabled ) {
+set_transient( $cache_key, $rows, $cache_ttl_hours * HOUR_IN_SECONDS );
+}
 return $rows;
 }
 
@@ -140,7 +145,9 @@ return $response;
 }
 $data = json_decode( wp_remote_retrieve_body( $response ), true );
 $rows = $data['rows'] ?? array();
-set_transient( $cache_key, $rows, 4 * HOUR_IN_SECONDS );
+if ( $cache_enabled ) {
+set_transient( $cache_key, $rows, $cache_ttl_hours * HOUR_IN_SECONDS );
+}
 return $rows;
 }
 
@@ -421,12 +428,15 @@ wp_send_json_error( array( 'message' => '⚠️ GA4 not configured. Go to Settin
 $range      = absint( $_POST['range'] ?? 30 );
 $range      = in_array( $range, array( 7, 30, 90 ), true ) ? $range : 30;
 $force_refresh = ! empty( $_POST['force_refresh'] );
+$cache_enabled = 'yes' === $settings->get( 'mm_analytics_cache_enabled', 'yes' );
+$cache_ttl_hours = (int) $settings->get( 'mm_analytics_cache_ttl_hours', 4 );
+$cache_ttl_hours = min( 168, max( 1, $cache_ttl_hours ) );
 $cache_key  = 'mm_ga4_data_' . $property_id . '_' . $range;
 if ( $force_refresh ) {
 delete_transient( $cache_key );
 }
 $cached     = get_transient( $cache_key );
-if ( ! $force_refresh && false !== $cached ) {
+if ( $cache_enabled && ! $force_refresh && false !== $cached ) {
 if ( is_array( $cached ) ) {
 $cached['cache_hit'] = true;
 }
@@ -517,7 +527,9 @@ $result = array(
 'cache_hit'   => false,
 'fetched_at'  => current_time( 'mysql' ),
 );
-set_transient( $cache_key, $result, HOUR_IN_SECONDS );
+if ( $cache_enabled ) {
+set_transient( $cache_key, $result, $cache_ttl_hours * HOUR_IN_SECONDS );
+}
 wp_send_json_success( $result );
 }
 }

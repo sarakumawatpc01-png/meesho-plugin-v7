@@ -83,8 +83,12 @@ return new WP_Error( 'unsupported', 'Undo is not supported for this action type.
 
 public function purge_expired_snapshots() {
 global $wpdb;
+$settings = class_exists( 'Meesho_Master_Settings' ) ? new Meesho_Master_Settings() : null;
+$retention_days = $settings ? absint( $settings->get( 'mm_log_retention_days', 90 ) ) : 90;
+$retention_days = min( 365, max( 7, $retention_days ) );
 $wpdb->query( 'UPDATE ' . MM_DB::table( 'audit_log' ) . ' SET old_value = NULL, undoable = 0 WHERE purge_after IS NOT NULL AND purge_after < NOW()' );
-$wpdb->query( 'DELETE FROM ' . MM_DB::table( 'seo_score_history' ) . ' WHERE recorded_at < DATE_SUB(NOW(), INTERVAL 90 DAY)' );
+$wpdb->query( $wpdb->prepare( 'DELETE FROM ' . MM_DB::table( 'seo_score_history' ) . ' WHERE recorded_at < DATE_SUB(NOW(), INTERVAL %d DAY)', $retention_days ) );
+$wpdb->query( $wpdb->prepare( 'DELETE FROM ' . MM_DB::table( 'audit_log' ) . ' WHERE created_at < DATE_SUB(NOW(), INTERVAL %d DAY)', $retention_days ) );
 }
 
 public function ajax_undo() {
